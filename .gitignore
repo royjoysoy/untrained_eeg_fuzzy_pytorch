@@ -1,0 +1,16 @@
+# Never commit data or results
+data/
+results/
+*.fdt
+*.set
+*.sif
+
+# Slurm logs (keep the folder)
+slurm/logs/*
+!slurm/logs/.gitkeep
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/

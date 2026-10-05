@@ -1,0 +1,42 @@
+"""Goal 2 (intermediate): seed variability.
+
+Same data, same probe; only the random initialization of the CNN changes.
+Writes results/seed/<model>_<condition>.npz with one row per seed.
+
+    python scripts/02_seed_variability.py
+    python scripts/02_seed_variability.py --models shallow --n-seeds 10
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from untrained_eeg.data import load_config, load_dataset
+from untrained_eeg.models import MODELS
+from untrained_eeg.variability import run_once
+
+parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+parser.add_argument("--config", default=None)
+parser.add_argument("--models", nargs="+", choices=MODELS, default=None)
+parser.add_argument("--n-seeds", type=int, default=None)
+args = parser.parse_args()
+
+cfg = load_config(args.config) if args.config else load_config()
+models = args.models or cfg["models"]
+n_seeds = args.n_seeds or cfg["n_seeds"]
+participants, windows = load_dataset(cfg, build=False)
+out_dir = cfg["results_dir"] / "seed"
+out_dir.mkdir(parents=True, exist_ok=True)
+
+for model in models:
+    for condition in cfg["conditions"]:
+        runs = [run_once(cfg, participants, windows, model, condition, seed) for seed in range(n_seeds)]
+        auc = np.array([r["auc"] for r in runs])
+        np.savez(out_dir / f"{model}_{condition}.npz",
+                 prob=np.stack([r["prob"] for r in runs]), auc=auc,
+                 bacc=np.array([r["bacc"] for r in runs]), seed=np.arange(n_seeds),
+                 participant_id=runs[0]["participant_id"], label=runs[0]["label"])
+        print(f"{model:8s} {condition:6s}: AUC {auc.mean():.3f} +/- {auc.std(ddof=1):.3f} over {n_seeds} seeds")

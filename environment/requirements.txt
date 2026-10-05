@@ -1,0 +1,12 @@
+# Normal (non-Fuzzy) environment. Tested with Python 3.11 and the versions noted.
+#   python -m venv ~/venv/untrained_eeg && source ~/venv/untrained_eeg/bin/activate
+#   pip install -r environment/requirements.txt
+torch>=2.2           # tested 2.14.1
+mne>=1.6             # tested 1.13.2
+braindecode>=1.8     # tested 1.8.1 (older versions call EEGNet "EEGNetv4")
+scikit-learn>=1.3    # tested 1.8.0
+numpy
+pandas
+pyyaml
+matplotlib
+jupyter

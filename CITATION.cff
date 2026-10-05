@@ -1,0 +1,52 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite it, Fuzzy PyTorch, Verificarlo, and the dataset."
+title: "How stable are untrained CNNs? Measuring random-weight CNN variability on EEG with Fuzzy PyTorch"
+type: software
+license: MIT
+repository-code: "https://github.com/royjoysoy/untrained_eeg_fuzzy_pytorch"
+authors:
+  - given-names: Roy
+    family-names: Seo
+    affiliation: "CAMH / KCNI"
+  - given-names: Yohan
+    family-names: Chatelain
+    affiliation: "CAMH / KCNI"
+  - given-names: Mina
+    family-names: Alizadeh
+  - given-names: Injy
+    family-names: Fouda
+  - given-names: Jishang
+    family-names: Jiang
+references:
+  - type: article
+    title: "Fuzzy PyTorch: Rapid Numerical Variability Evaluation for Deep Learning Models"
+    authors:
+      - family-names: Gonzalez-Pepe
+      - family-names: Akhaddar
+      - family-names: Glatard
+      - family-names: Chatelain
+        given-names: Yohan
+    journal: "Transactions on Machine Learning Research"
+    year: 2026
+    url: "https://openreview.net/forum?id=0ogq232VGP"
+  - type: conference-paper
+    title: "Verificarlo: Checking Floating Point Accuracy through Monte Carlo Arithmetic"
+    authors:
+      - family-names: Denis
+        given-names: Christophe
+      - family-names: de Oliveira Castro
+        given-names: Pablo
+      - family-names: Petit
+        given-names: Eric
+    conference:
+      name: "IEEE 23rd Symposium on Computer Arithmetic (ARITH)"
+    year: 2016
+  - type: dataset
+    title: "EEG: Depression rest"
+    authors:
+      - family-names: Cavanagh
+        given-names: James F.
+    year: 2021
+    version: "1.1.0"
+    doi: "10.18112/openneuro.ds003478.v1.1.0"
+    url: "https://openneuro.org/datasets/ds003478/versions/1.1.0"
