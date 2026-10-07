@@ -36,39 +36,36 @@ import pandas as pd
 DROP = ["M1", "M2", "CB1", "CB2", "HEOG", "VEOG"]
 CHANNELS_64 = "FP1 FPZ FP2 AF3 AF4 F7 F5 F3 F1 FZ F2 F4 F6 F8 FT7 FC5 FC3 FC1 FCZ FC2 FC4 FC6 FT8 T7 C5 C3 C1 CZ C2 C4 C6 T8 M1 TP7 CP5 CP3 CP1 CPZ CP2 CP4 CP6 TP8 M2 P7 P5 P3 P1 PZ P2 P4 P6 P8 PO7 PO5 PO3 POZ PO4 PO6 PO8 CB1 O1 OZ O2 CB2".split()
 CHANNELS_60 = [c for c in CHANNELS_64 if c not in DROP]
-EXCLUDE = {"sub-038", "sub-016", "sub-033", "sub-107", "sub-024", "sub-034", "sub-046", "sub-067", "sub-076", "sub-080", "sub-052", "sub-091"}
+EXCLUDE = {"sub-038"}
 EC_CODES, EO_CODES = {1, 3, 5}, {2, 4, 6}
 SEG_SEC = 60.0
 
 log = logging.getLogger("preprocess")
 
+
 def block_onsets(events_tsv: Path) -> dict[int, float]:
-    """First onset (s) of each block code 1-6, identified by numeric event codes."""
+    """First onset (s) of each block code 1-6."""
     ev = pd.read_csv(events_tsv, sep="\t")
+    ev = ev[ev["trial_type"].astype(str).str.startswith("Eyes")]
     values = pd.to_numeric(ev["value"], errors="coerce")
-    keep = values.isin(list(range(1, 7)) + list(range(11, 17)))
-    ev = ev[keep].copy()
-    ev["block"] = values[keep].astype(int) % 10
-
-    # Cross-check against text labels only where they exist
-    tt = ev["trial_type"].astype(str)
-    labelled = tt.str.startswith("Eyes")
+    ev = ev[values.isin(list(range(1, 7)) + list(range(11, 17)))]
+    code = values.loc[ev.index].astype(int) % 10
+    ev = ev.loc[code.index].assign(block=code)
+    ev = ev[ev["block"].between(1, 6)]
     expected = np.where(ev["block"].isin(EC_CODES), "Eyes Closed", "Eyes Open")
-    if not all(a.startswith(b) for a, b, m in zip(tt, expected, labelled) if m):
+    if not all(str(a).startswith(b) for a, b in zip(ev["trial_type"], expected)):
         raise ValueError("Event code and eyes-open/closed labels disagree")
-
     onsets = ev.groupby("block")["onset"].min().to_dict()
     if set(onsets) != set(range(1, 7)) or not np.isfinite(list(onsets.values())).all():
         raise ValueError("Expected six finite block onsets")
     ordered = sorted(onsets.values())
-    if min(ordered) < 0 or any(b - a < SEG_SEC for a, b in zip(ordered, ordered[1:])):
+    if min(ordered) < 0 or any(b-a < SEG_SEC for a,b in zip(ordered, ordered[1:])):
         raise ValueError("Negative or overlapping 60-second block onsets")
     return onsets
 
 
-
 def preprocess_subject(set_path: Path, events_tsv: Path, l_freq: float, h_freq: float,
-                       sfreq_out: float, channels: int = 60) -> dict:
+                       sfreq_out: float, channels: int = 60, condition: str = 'both') -> dict:
     raw = mne.io.read_raw_eeglab(set_path, preload=True, verbose="error")
     desired = CHANNELS_60 if channels == 60 else CHANNELS_64
     names = [c.upper() for c in raw.ch_names]
@@ -91,6 +88,9 @@ def preprocess_subject(set_path: Path, events_tsv: Path, l_freq: float, h_freq: 
     data = raw.get_data()
     segs, blocks, conds = [], [], []
     for blk, onset in sorted(block_onsets(events_tsv).items()):
+        label = 'EC' if blk in EC_CODES else 'EO'
+        if condition != 'both' and label != condition:
+            continue
         start = int(round(onset * sfreq_out))
         if start + n_seg > data.shape[1]:
             raise ValueError(f"{set_path.name} block {blk} runs past recording end")
@@ -114,6 +114,7 @@ def main():
     ap.add_argument("--subjects", nargs="*", help="e.g. sub-001 sub-002 (default: all)")
     ap.add_argument("--channels", type=int, choices=[60, 64], default=60,
                     help="60 excludes M1/M2/CB1/CB2; 64 includes them, always excludes EOG")
+    ap.add_argument('--cond', choices=['EC', 'EO', 'both'], default='both')
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     if args.out.exists() and any(args.out.iterdir()):
@@ -134,7 +135,7 @@ def main():
         set_path, ev_path = Path(f"{stem}_eeg.set"), Path(f"{stem}_events.tsv")
         if not set_path.exists() or not ev_path.exists():
             raise FileNotFoundError(f"{sub}: missing {set_path} or {ev_path}")
-        out = preprocess_subject(set_path, ev_path, args.l_freq, args.h_freq, args.sfreq, args.channels)
+        out = preprocess_subject(set_path, ev_path, args.l_freq, args.h_freq, args.sfreq, args.channels, args.cond)
         np.savez_compressed(args.out / f"{sub}.npz", **out)
         completed.append(sub)
         log.info("%s: %d blocks %s, shape %s", sub, len(out["block"]),
@@ -146,7 +147,7 @@ def main():
         'channel_order': CHANNELS_60 if args.channels == 60 else CHANNELS_64,
         'run': args.run, 'low_hz': args.l_freq, 'high_hz': args.h_freq,
         'sfreq': args.sfreq, 'seconds': SEG_SEC, 'reference': 'average',
-        'ica': False, 'mne': mne.__version__, 'numpy': np.__version__,
+        'ica': False, 'condition': args.cond, 'mne': mne.__version__, 'numpy': np.__version__,
         'pandas': pd.__version__}, indent=2) + '\n')
 
 

@@ -121,6 +121,7 @@ def extract(args, rounding):
     metadata = {**{k:v for k,v in m.items() if k != 'feature_names'},
                 'mode':args.mode, 'repetition': args.repetition,
                 'perturbation_seed':args.perturbation_seed,
+                'prism_startup_seed':int(os.environ['PRISM_SEED']),
                 'prism_seed_reported':int(rounding.lib.interflop_prism_get_seed()),
                 'precision_binary32':24, 'precision_binary64':53,
                 'scope':'CNN forward including GroupNorm and PyTorch feature readout',
@@ -150,6 +151,8 @@ def main():
     a=p.parse_args()
     if a.repetition < 1:
         p.error('Repetition must be positive')
+    if a.action == 'run' and os.environ.get('PRISM_SEED') != str(a.perturbation_seed):
+        p.error('Launch via container.sh so PRISM_SEED matches --perturbation-seed before PyTorch loads')
     rounding=Rounding()
     torch.set_num_threads(1); torch.set_num_interop_threads(1)
     torch.use_deterministic_algorithms(True)

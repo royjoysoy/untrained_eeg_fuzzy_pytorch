@@ -26,14 +26,17 @@ def main():
     ref=read(a.reference); meta=json.loads(str(ref['summary']))
     if meta['feature_mode']!='rn':
         raise ValueError('Reference probe must use RN features')
-    values,seeds=[],[]
+    values,seeds,accuracies,aucs=[],[],[],[]
     for path in a.runs:
         d=read(path); m=json.loads(str(d['summary']))
         if (m['classifier_bundle_sha256']!=meta['classifier_bundle_sha256'] or
             m['feature_mode']!='sr' or not np.array_equal(d['subject'],ref['subject']) or
             not np.array_equal(d['y'],ref['y']) or d['proba'].shape!=ref['proba'].shape):
             raise ValueError('Classifier, subjects, labels, or folds differ')
+        if not np.isfinite(d['proba']).all():
+            raise ValueError('Nonfinite probabilities')
         values.append(d['proba']); seeds.append(m['perturbation_seed'])
+        accuracies.append(d['bacc']); aucs.append(d['auc'])
     if len(set(seeds))!=len(values):
         raise ValueError('Duplicate perturbation seeds')
     arr=np.stack(values); reference=ref['proba']
@@ -51,6 +54,12 @@ def main():
     summary={'n_runs':len(values),'n_subjects':len(ref['subject']),
              'maximum_paired_probability_difference':float(np.abs(arr-reference).max()),
              'paired_decision_flips':int(flips.sum()),
+             'reference_balanced_accuracy_mean':float(ref['bacc'].mean()),
+             'reference_roc_auc_mean':float(ref['auc'].mean()),
+             'run_balanced_accuracy_means':[float(x.mean()) for x in accuracies],
+             'run_roc_auc_means':[float(x.mean()) for x in aucs],
+             'maximum_paired_balanced_accuracy_change':float(np.abs(np.stack(accuracies)-ref['bacc']).max()),
+             'maximum_paired_roc_auc_change':float(np.abs(np.stack(aucs)-ref['auc']).max()),
              'classifier_bundle_sha256':meta['classifier_bundle_sha256']}
     (a.out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
     print(json.dumps(summary,indent=2))
