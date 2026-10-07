@@ -34,10 +34,14 @@ not replace the instrumented PyTorch or NumPy, and pick versions that support
 the image's NumPy:
 
 ```bash
-# TODO(fuzzy-image): pin versions compatible with the image's NumPy (1.26 on the ARM build)
 apptainer exec $FUZZY_IMAGE pip install --no-deps --target=$HOME/fuzzy_pkgs \
-    scikit-learn scipy joblib threadpoolctl pyyaml pandas
+    -r environment/requirements-fuzzy.txt
 ```
+
+The versions in `requirements-fuzzy.txt` support NumPy 1.26 (tested on the AArch64 build;
+TODO(fuzzy-image): check against the x86 image). For a native build instead of a
+container (e.g. AArch64), install the same way with the build's `python -m pip` and run
+scripts through `environment/fuzzy_arm.sh`.
 
 The slurm script adds `$HOME/fuzzy_pkgs` to `PYTHONPATH` inside the container.
 
