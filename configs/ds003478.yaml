@@ -34,6 +34,8 @@ h_freq: 40.0
 sfreq: 128         # resample to this rate, Hz
 segment_s: 60      # each eyes-open / eyes-closed block is cut to 1 minute
 window_s: 2        # each minute is split into non-overlapping windows
+max_windows: null  # per participant and condition, evenly spaced; null = all.
+                   # Set e.g. 20 for quick Fuzzy PyTorch runs (they are ~100x slower).
 
 # --- Models and variability ----------------------------------------------
 models: [cnn1d, shallow, eegnet]
