@@ -16,12 +16,20 @@ from sklearn.preprocessing import StandardScaler
 from .models import build_model, embed
 
 
-def participant_features(model, windows, participant_ids, condition):
-    """Mean feature vector per participant over their `condition` windows."""
+def participant_features(model, windows, participant_ids, condition, max_windows=None):
+    """Mean feature vector per participant over their `condition` windows.
+
+    max_windows: use at most this many windows per participant, evenly spaced
+    over the recording (so every block is still represented). Fuzzy PyTorch
+    is slow; this keeps runs short. None = all windows.
+    """
     feats = []
     for pid in participant_ids:
         X, cond = windows[pid]
-        feats.append(embed(model, X[cond == condition]).mean(axis=0))
+        X = X[cond == condition]
+        if max_windows and len(X) > max_windows:
+            X = X[np.linspace(0, len(X) - 1, max_windows).round().astype(int)]
+        feats.append(embed(model, X).mean(axis=0))
     return np.stack(feats)
 
 
@@ -45,7 +53,7 @@ def run_once(cfg, participants, windows, model_name, condition, seed):
     pids = people["participant_id"].tolist()
     _, n_chans, n_times = windows[pids[0]][0].shape
     model = build_model(model_name, n_chans, n_times, seed)
-    feats = participant_features(model, windows, pids, condition)
+    feats = participant_features(model, windows, pids, condition, cfg.get("max_windows"))
     prob, auc, bacc = probe(feats, people["label"].to_numpy(), cfg)
     return dict(prob=prob, auc=auc, bacc=bacc, participant_id=np.array(pids),
                 label=people["label"].to_numpy())
