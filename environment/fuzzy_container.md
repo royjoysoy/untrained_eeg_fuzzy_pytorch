@@ -25,14 +25,18 @@ export FUZZY_IMAGE=$PWD/fuzzy-pytorch.sif
 
 ## 2. Add the extra Python packages (once)
 
-The image has PyTorch and NumPy but not braindecode, scikit-learn or PyYAML.
-Install them into a folder outside the image with `--no-deps`, so pip does not
-replace the instrumented PyTorch:
+The image has PyTorch and NumPy but not scikit-learn or PyYAML. braindecode and
+MNE are *not* needed: the models are plain-PyTorch copies (`src/untrained_eeg/models.py`),
+and preprocessing runs outside the container. That matters because recent MNE
+needs NumPy ≥ 2.1, while the instrumented PyTorch is built against NumPy 1.26.
+Install the rest into a folder outside the image with `--no-deps`, so pip does
+not replace the instrumented PyTorch or NumPy, and pick versions that support
+the image's NumPy:
 
 ```bash
-# TODO(fuzzy-image): check this list against the image; braindecode imports mne.
+# TODO(fuzzy-image): pin versions compatible with the image's NumPy (1.26 on the ARM build)
 apptainer exec $FUZZY_IMAGE pip install --no-deps --target=$HOME/fuzzy_pkgs \
-    braindecode mne scikit-learn pyyaml pandas
+    scikit-learn scipy joblib threadpoolctl pyyaml pandas
 ```
 
 The slurm script adds `$HOME/fuzzy_pkgs` to `PYTHONPATH` inside the container.
