@@ -24,7 +24,7 @@ Then we compare the two.
 **Setup.** Resting EEG from [OpenNeuro ds003478](https://openneuro.org/datasets/ds003478/versions/1.1.0)
 (122 participants, 64 channels). We take run-01 and cut it into 1-minute eyes-open
 and eyes-closed blocks, then 2-second windows. Three random-weight CNNs (a small
-1D CNN, braindecode ShallowConvNet, and EEGNet) turn each window into features.
+1D CNN, ShallowConvNet and EEGNet, the last two copied from braindecode) turn each window into features.
 A logistic-regression probe classifies **high vs low depression score (BDI)** from
 each participant's average features. Variability is measured on the probe's outputs.
 
@@ -77,6 +77,7 @@ src/untrained_eeg/
   data.py               load EEG, cut eyes-open/closed blocks, cache windows
   models.py             the three random-weight CNNs
   variability.py        features -> probe -> variability metrics
+tests/                  pytest checks (python -m pytest tests/)
 scripts/                00-04, one per goal, run in order
 slurm/                  Rorqual jobs (cache, seeds, MCA array)
 environment/            requirements.txt + Fuzzy PyTorch container notes
