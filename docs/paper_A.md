@@ -78,3 +78,41 @@ done
 Note: with its default tolerance (`tol=1e-4`) sklearn's probe stops up to 1.8e-3 away from
 the optimum in P(high BDI) (cnn1d, eyes closed); the PyTorch probe agrees with a tightly
 converged sklearn (`tol=1e-12`) to 4e-7. The pilot and `probe_runs.py` keep the default.
+
+```bash
+python scripts/summarize_probe_rounding.py --dir results/paper/A4_probe_sr --out results/paper/A_stats
+```
+
+## Results (2026-10-07, all windows, 113 participants)
+
+Median over participants of the SD of P(high BDI) across runs, and share of participants
+whose predicted class changes (flip). 30 runs per source; seeds and data splits use
+round-to-nearest; "rounding" = GPU stochastic rounding of the CNN, weight seed 0, sklearn probe.
+
+| model, condition | seeds: SD / flip | data splits: SD / flip | rounding: SD / flip | rounding, sig. digits (CNH) |
+|---|---|---|---|---|
+| cnn1d closed | 0.157 / 74 % | 0.092 / 52 % | 1.8e-7 / 0 % | 5.7 |
+| cnn1d open | 0.034 / 30 % | 0.070 / 44 % | 4.1e-8 / 0 % | 6.6 |
+| shallow closed | 0.215 / 84 % | 0.131 / 63 % | 1.1e-4 / 0 % | 2.8 |
+| shallow open | 0.207 / 91 % | 0.132 / 67 % | 1.2e-4 / 0 % | 3.0 |
+| eegnet closed | 0.247 / 89 % | 0.143 / 60 % | 7.1e-7 / 0 % | 5.0 |
+| eegnet open | 0.111 / 77 % | 0.111 / 56 % | 6.8e-8 / 0 % | 6.2 |
+
+- Seed variability exceeds rounding variability by 3–6 orders of magnitude; no participant's
+  prediction ever flips under rounding (30 samples, all models and conditions).
+- **The data split matters about as much as the seed** (SD 0.07–0.14, 44–67 % flips): the
+  CV split is a variability source of the same size and should be reported.
+- **Crossed design (A3, 10 × 10):** the weight seed explains essentially all the variance
+  (median share ≈ 1.0). The rounding sensitivity itself depends strongly on the weight
+  draw: a participant's rounding SD varies by a median factor of 570 (cnn1d), 1 200–1 400
+  (shallow) and 3 300 (eegnet) across the 10 weight seeds, eyes closed. With eyes open some
+  weight seeds give exactly zero rounding SD for some participants, so the ratio is undefined.
+- **Probe under rounding (A4):** perturbing only the probe moves P(high BDI) by 1e-9–2e-8;
+  end to end (rounded features + rounded, tightly converged PyTorch probe) by 3e-8–3.4e-7,
+  0 flips. With sklearn's default probe on the same rounded features, ShallowFBCSPNet
+  moves by 1.1e-4, ~300× more (eegnet ~10×, cnn1d ~2×): most of the "rounding" effect seen
+  for ShallowFBCSPNet comes from the loose stopping tolerance of the probe amplifying tiny
+  feature differences.
+
+Tables: `results/paper/A_stats/` (`summary.csv`, `variance_summary.csv`,
+`summary_probe_sr.csv`, per-participant CSVs).
