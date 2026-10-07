@@ -1,0 +1,2 @@
+# Ordinary preprocessing/classification environment only; never install in Fuzzy.
+-r requirements-normal.txt
