@@ -1,0 +1,16 @@
+# Extra packages for the Fuzzy PyTorch environment (probe + data loading only).
+# The instrumented PyTorch is built against NumPy 1.26, so these versions are pinned
+# to ones that support it. Install them next to (not into) the instrumented build,
+# with --no-deps so pip never replaces torch or numpy:
+#   pip install --no-deps --target=$HOME/fuzzy_pkgs -r environment/requirements-fuzzy.txt
+# Tested on the AArch64 build (Python 3.12, torch 2.2, NumPy 1.26.4).
+# No braindecode / MNE needed: models are plain PyTorch, preprocessing runs outside.
+scipy==1.13.1
+scikit-learn==1.5.2
+joblib==1.4.2
+threadpoolctl==3.5.0
+pandas==2.2.3
+python-dateutil==2.9.0.post0
+pytz==2024.2
+tzdata==2024.2
+six==1.16.0
