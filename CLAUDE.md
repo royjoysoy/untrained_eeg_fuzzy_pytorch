@@ -9,7 +9,11 @@ much do untrained (random-weight) CNNs vary on EEG? (1) across seeds,
 The repo is public and used by Brainhack beginners: keep it clean, short, and well commented.
 
 ## Design decisions (settled)
-- Models: small custom 1D CNN, braindecode ShallowFBCSPNet, braindecode EEGNet. Random weights, eval mode, never trained.
+- Models: small custom 1D CNN, ShallowFBCSPNet, EEGNet. Random weights, eval mode, never trained.
+  The two braindecode models are copied as plain PyTorch in `models.py` (no braindecode/MNE in the
+  Fuzzy environment); `tests/test_models.py` checks they stay bit-identical to braindecode 1.8.1.
+- Same seed ≠ same weights across PyTorch builds (last-bit differences, e.g. torch 2.14 vs Fuzzy 2.2):
+  run the seed baseline with the same build as the Fuzzy runs (normal rounding), or reuse saved weights.
 - Variability is measured on a downstream probe: logistic regression, high vs low BDI, stratified 5-fold CV with a fixed split. Not on embeddings.
 - Data: ds003478 v1.1.0, run-01 only, 1-minute eyes-open/closed blocks → 2 s windows, participant 544 excluded.
 - BDI cutoffs: ≤6 low / ≥17 high (equivalent to the original study's <7 / >16 for integer scores). Confirmed.
