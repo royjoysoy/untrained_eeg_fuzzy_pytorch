@@ -66,6 +66,7 @@ if rows:
             ax.plot(g["precision"], g["median_sd"], "o-", color=colors.get(model), label=model)
             ax.axhline(g["seed_median_sd"].iloc[0], color=colors.get(model), ls="--", lw=1)
         ax.set_yscale("log")
+        ax.set_xticks(sorted(sweep["precision"].unique()))
         ax.set_xlabel("significant bits (24 = float32, 11 = fp16, 8 = bf16)")
         ax.set_title(f"eyes {condition}")
         ax.invert_xaxis()
