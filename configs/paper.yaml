@@ -1,0 +1,47 @@
+# Paper analyses (#30-#32): ds003478, all windows, 30 seeds / 30 rounding samples. Outputs in results/paper/.
+# Every script reads this file. Override it with --config path/to/other.yaml.
+
+# Where the BIDS dataset lives. Leave as null and set the environment variable
+# UNTRAINED_EEG_DATA instead, e.g.
+#   export UNTRAINED_EEG_DATA=/path/to/ds003478
+# The environment variable wins if both are set.
+data_dir: null
+
+# Where preprocessed windows and results are written (both git-ignored).
+cache_dir: data/cache
+results_dir: results/paper
+
+# --- Which recordings to use ---------------------------------------------
+run: "01"                    # run-01 only (high quality, right after hook-up)
+exclude_original_ids: [544]  # 544: unstable BDI, excluded in the original study
+# The 60 scalp channels, in this order. Everything else (M1, M2, CB1, CB2,
+# HEOG, VEOG and an EKG channel present in some files) is dropped.
+channels: [
+  FP1, FPZ, FP2, AF3, AF4, F7, F5, F3, F1, FZ, F2, F4, F6, F8, FT7,
+  FC5, FC3, FC1, FCZ, FC2, FC4, FC6, FT8, T7, C5, C3, C1, CZ, C2, C4,
+  C6, T8, TP7, CP5, CP3, CP1, CPZ, CP2, CP4, CP6, TP8, P7, P5, P3, P1,
+  PZ, P2, P4, P6, P8, PO7, PO5, PO3, POZ, PO4, PO6, PO8, O1, OZ, O2
+]
+
+# --- Labels: high vs low BDI ---------------------------------------------
+# Original study used BDI < 7 (low) vs BDI > 16 (high). TODO: confirm with Roy.
+bdi_low_max: 6     # BDI <= 6  -> low  (label 0)
+bdi_high_min: 17   # BDI >= 17 -> high (label 1); scores in between are dropped
+
+# --- Preprocessing -------------------------------------------------------
+l_freq: 1.0        # band-pass, Hz
+h_freq: 40.0
+sfreq: 128         # resample to this rate, Hz
+segment_s: 60      # each eyes-open / eyes-closed block is cut to 1 minute
+window_s: 2        # each minute is split into non-overlapping windows
+max_windows: null  # per participant and condition, evenly spaced; null = all.
+                   # Set e.g. 20 for quick Fuzzy PyTorch runs (they are ~100x slower).
+
+# --- Models and variability ----------------------------------------------
+models: [cnn1d, shallow, eegnet]
+conditions: [closed, open]
+n_seeds: 30          # seed variability: number of random initializations
+mca_seed: 0          # MCA variability: the one fixed seed that is re-run
+n_mca_samples: 30    # MCA variability: number of Fuzzy PyTorch runs
+cv_folds: 5          # logistic-regression probe, stratified K-fold
+cv_seed: 0           # the CV split is fixed so only the CNN changes
