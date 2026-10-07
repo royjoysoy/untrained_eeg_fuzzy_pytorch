@@ -58,7 +58,14 @@ TURBULENCE_EXPORT float __turbulence_srp_fma_f32(float a, float b, float c, TURB
   return srp(r, d, TURB_RNG);
 }
 
-#define RR64(op, expr)                                                                     \
+// float64 -> float32 conversion (ShallowFBCSPNet's kernels have one): same rounding.
+TURBULENCE_EXPORT float __turbulence_srp_trunc_f64_f32(double x, TURB_RNG_PARAMS) {
+  float r = (float)x;
+  float d = (float)(x - (double)r);  // exact error in double; its float value sets the probability
+  return srp(r, d, TURB_RNG);
+}
+
+#define RR64(op, expr)                                                                   \
   TURBULENCE_EXPORT double __turbulence_srp_##op##_f64(double a, double b, TURB_RNG_PARAMS) { \
     double d, r = expr;                                                                     \
     return turb_round(r, d, TURB_RR, TURB_RNG);                                        \
