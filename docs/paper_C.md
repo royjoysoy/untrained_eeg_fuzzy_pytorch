@@ -64,3 +64,47 @@ Checked on OpenNeuro (2026-10-07, metadata only). All CC0, BIDS EEG with a resti
 | [ds002778](https://openneuro.org/datasets/ds002778) | Parkinson's vs control | 31 | Small, quick sanity check | 32 channels, ON/OFF sessions |
 
 Recommendation: ds003490 first (same acquisition as ds003478), then ds004584 for sample size.
+
+## Results (2026-10-07, all windows, 113 participants)
+
+**C8, positive control.** Eyes closed vs open is easy for the random-CNN features, so they do
+carry EEG information, and the seed vs rounding gap holds on a task that works:
+
+| model | AUC, 30 seeds | AUC, 30 rounding samples | block P(closed): SD / flips, seeds | rounding |
+|---|---|---|---|---|
+| cnn1d | 0.929 ± 0.013 | 0.934 (identical) | 0.078 / 37 % | 5.2e-8 / 0 % |
+| shallow | 0.947 ± 0.014 | 0.942 ± 0.0001 | 0.115 / 49 % | 1.7e-4 / 0.15 % |
+| eegnet | 0.885 ± 0.023 | 0.907 (identical) | 0.135 / 64 % | 5.7e-8 / 0 % |
+
+**C9, permutation null** (weight seed 0, 1000 permutations):
+
+| | cnn1d | shallow | eegnet |
+|---|---|---|---|
+| eyes closed | 0.654, **p = 0.022** | 0.582, p = 0.15 | 0.541, p = 0.30 |
+| eyes open | 0.464, p = 0.67 | 0.523, p = 0.37 | 0.599, p = 0.08 |
+
+Null 95th percentile ≈ 0.61–0.63. Only cnn1d eyes closed beats chance, and not after correcting
+for the 6 tests (Bonferroni 0.05 / 6 = 0.008).
+
+**C10, band power:** AUC 0.529 (closed, p = 0.36), 0.592 (open, p = 0.12): no better than the
+random CNNs.
+
+**C11, confounds** (mean AUC over 30 seeds):
+
+| model, condition | BDI | sex regressed out | women | men | STAI median split | sex alone |
+|---|---|---|---|---|---|---|
+| cnn1d closed | 0.636 | 0.629 | 0.515 | 0.776 | 0.620 | 0.537 |
+| cnn1d open | 0.450 | 0.457 | 0.583 | 0.568 | 0.469 | 0.537 |
+| shallow closed | 0.553 | 0.542 | 0.465 | 0.757 | 0.590 | 0.537 |
+| shallow open | 0.580 | 0.583 | 0.614 | 0.446 | 0.569 | 0.537 |
+| eegnet closed | 0.533 | 0.562 | 0.505 | 0.676 | 0.512 | 0.537 |
+| eegnet open | 0.563 | 0.578 | 0.605 | 0.644 | 0.525 | 0.537 |
+| band power closed | 0.529 | 0.504 | 0.739 | 0.623 | 0.613 | 0.537 |
+| band power open | 0.592 | 0.584 | 0.761 | 0.462 | 0.630 | 0.537 |
+
+Sex alone barely predicts the BDI group and regressing it out changes little; STAI is about as
+predictable as BDI. Sex-stratified results are noisy (11 high-BDI men).
+
+**Reading.** The features are informative (C8) but BDI is essentially not decodable from them,
+nor from band power (C9, C10), and not because of sex (C11). The seed vs rounding comparison is
+therefore best reported on the positive control as well as on BDI: the conclusion is the same.
