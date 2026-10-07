@@ -36,32 +36,35 @@ import pandas as pd
 DROP = ["M1", "M2", "CB1", "CB2", "HEOG", "VEOG"]
 CHANNELS_64 = "FP1 FPZ FP2 AF3 AF4 F7 F5 F3 F1 FZ F2 F4 F6 F8 FT7 FC5 FC3 FC1 FCZ FC2 FC4 FC6 FT8 T7 C5 C3 C1 CZ C2 C4 C6 T8 M1 TP7 CP5 CP3 CP1 CPZ CP2 CP4 CP6 TP8 M2 P7 P5 P3 P1 PZ P2 P4 P6 P8 PO7 PO5 PO3 POZ PO4 PO6 PO8 CB1 O1 OZ O2 CB2".split()
 CHANNELS_60 = [c for c in CHANNELS_64 if c not in DROP]
-EXCLUDE = {"sub-038"}
+EXCLUDE = {"sub-038", "sub-016", "sub-033", "sub-107", "sub-024", "sub-034", "sub-046", "sub-067", "sub-076", "sub-080", "sub-052", "sub-091"}
 EC_CODES, EO_CODES = {1, 3, 5}, {2, 4, 6}
 SEG_SEC = 60.0
 
 log = logging.getLogger("preprocess")
 
-
 def block_onsets(events_tsv: Path) -> dict[int, float]:
-    """First onset (s) of each block code 1-6."""
+    """First onset (s) of each block code 1-6, identified by numeric event codes."""
     ev = pd.read_csv(events_tsv, sep="\t")
-    ev = ev[ev["trial_type"].astype(str).str.startswith("Eyes")]
     values = pd.to_numeric(ev["value"], errors="coerce")
-    ev = ev[values.isin(list(range(1, 7)) + list(range(11, 17)))]
-    code = values.loc[ev.index].astype(int) % 10
-    ev = ev.loc[code.index].assign(block=code)
-    ev = ev[ev["block"].between(1, 6)]
+    keep = values.isin(list(range(1, 7)) + list(range(11, 17)))
+    ev = ev[keep].copy()
+    ev["block"] = values[keep].astype(int) % 10
+
+    # Cross-check against text labels only where they exist
+    tt = ev["trial_type"].astype(str)
+    labelled = tt.str.startswith("Eyes")
     expected = np.where(ev["block"].isin(EC_CODES), "Eyes Closed", "Eyes Open")
-    if not all(str(a).startswith(b) for a, b in zip(ev["trial_type"], expected)):
+    if not all(a.startswith(b) for a, b, m in zip(tt, expected, labelled) if m):
         raise ValueError("Event code and eyes-open/closed labels disagree")
+
     onsets = ev.groupby("block")["onset"].min().to_dict()
     if set(onsets) != set(range(1, 7)) or not np.isfinite(list(onsets.values())).all():
         raise ValueError("Expected six finite block onsets")
     ordered = sorted(onsets.values())
-    if min(ordered) < 0 or any(b-a < SEG_SEC for a,b in zip(ordered, ordered[1:])):
+    if min(ordered) < 0 or any(b - a < SEG_SEC for a, b in zip(ordered, ordered[1:])):
         raise ValueError("Negative or overlapping 60-second block onsets")
     return onsets
+
 
 
 def preprocess_subject(set_path: Path, events_tsv: Path, l_freq: float, h_freq: float,

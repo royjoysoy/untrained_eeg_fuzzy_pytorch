@@ -2,7 +2,7 @@
 # Run a script with a native (non-container) Fuzzy PyTorch build, e.g. the AArch64 one.
 #
 #   export FUZZY_ENV=/path/to/fuzzy-pytorch-arm/env.sh   # sets PATH / libs for the build
-#   MODE=rn bash environment/fuzzy_arm.sh scripts/02_seed_variability.py --config ...
+#   MODE=rn bash environment/fuzzy_arm.sh scripts/02_extract_features.py ...
 #   MODE=sr SEED=7 bash environment/fuzzy_arm.sh scripts/03_mca_variability.py --sample 7
 #
 #   MODE     rn (round to nearest, the reference) or sr (stochastic rounding). Default rn.
