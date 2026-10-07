@@ -3,6 +3,13 @@
 **Measuring random-weight CNN variability on EEG with Fuzzy PyTorch**
 A Brainhack Montreal (Fall 2026) project. Status: prototype.
 
+For the controlled frozen-CNN EC experiment with two references, five PRISM
+stochastic-rounding runs and fixed reference-trained classifiers, follow
+[scripts/README.md](scripts/README.md). Settings are in
+[configs/ec_experiment.env](configs/ec_experiment.env). This workflow uses
+64 electrodes, 60-second blocks and low BDI <=7 / high BDI >=13; the broader
+prototype below uses a different model/window/label configuration.
+
 Untrained CNNs, whose weights are random and never trained, are often used as
 baselines or as cheap feature extractors. How much do their results depend on
 chance? We look at two sources of chance:

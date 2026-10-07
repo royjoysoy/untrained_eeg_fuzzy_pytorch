@@ -14,3 +14,15 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .venv/
+.venv-normal/
+runtime-dependencies/
+test-dependencies/
+.pytest_cache/
+experiments/
+logs/
+preprocessed_data/
+preprocessed_ec_eo/
+*.npz
+*.npy
+*.pt
+*.joblib

@@ -16,10 +16,10 @@ The repo is public and used by Brainhack beginners: keep it clean, short, and we
   run the seed baseline with the same build as the Fuzzy runs (normal rounding), or reuse saved weights.
 - Variability is measured on a downstream probe: logistic regression, high vs low BDI, stratified 5-fold CV with a fixed split. Not on embeddings.
 - Data: ds003478 v1.1.0, run-01 only, 1-minute eyes-open/closed blocks → 2 s windows, participant 544 excluded.
+- BDI cutoffs: ≤6 low / ≥17 high (equivalent to the original study's <7 / >16 for integer scores). Confirmed.
 - License MIT.
 
 ## Open items (ask Roy, don't assume)
-- BDI cutoffs: currently ≤6 low / ≥17 high (original study: <7 vs >16). Confirm.
 - Fuzzy PyTorch image name/tag: placeholders marked `TODO(fuzzy-image)` in `environment/` and `slurm/`.
 - Shared data path in Rorqual `/project` space.
 
