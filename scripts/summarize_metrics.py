@@ -1,10 +1,11 @@
-"""Classification metrics and stability, seeds (02) vs Fuzzy samples (03).
+"""Classification metrics and stability: seeds (02) vs numerical samples (03).
 
-Reads results/seed/ and results/mca/ (the per-run out-of-fold P(high BDI) and
+Reads results/seed/, results/mca/ (Fuzzy PyTorch, CPU) and results/turbulence/
+(GPU), whichever exist: the per-run out-of-fold P(high BDI) and
 labels), recomputes the usual classification metrics for every run, and writes
 results/metrics_summary.csv:
 
-  one row per source (seed / fuzzy) x model x condition, with mean, std, min, max
+  one row per source (seed / fuzzy_cpu / turbulence) x model x condition, with mean, std, min, max
   across runs of accuracy, balanced accuracy, F1, precision, recall, specificity,
   ROC-AUC, plus per-participant stability of P(high BDI):
     prob_std     mean over participants of the std across runs
@@ -28,6 +29,9 @@ from untrained_eeg.data import load_config
 from untrained_eeg.variability import significant_digits
 
 THRESHOLD = 0.5  # P(high BDI) > 0.5 -> predicted high
+# results sub-folder -> label. mca: Fuzzy PyTorch on CPU (03_mca_variability.py),
+# turbulence: stochastic rounding on GPU (03_turbulence_variability.py).
+SOURCES = {"seed": "seed", "mca": "fuzzy_cpu", "turbulence": "turbulence"}
 
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument("--config", default=None)
@@ -44,12 +48,14 @@ def load_runs(source, model, condition):
             return None
         d = np.load(f)
         return d["prob"], d["label"]
-    files = sorted((res / "mca" / f"{model}_{condition}").glob("sample-*.npz"))
+    files = sorted((res / source / f"{model}_{condition}").glob("sample-*.npz"))
     if not files:
         return None
-    runs = [np.load(f) for f in files]
+    # allow_pickle: 03_turbulence_variability.py saves participant ids as an object array
+    runs = [np.load(f, allow_pickle=True) for f in files]
+    ids = runs[0]["participant_id"].astype(str)
     for r in runs[1:]:  # all samples must describe the same participants
-        assert np.array_equal(r["participant_id"], runs[0]["participant_id"])
+        assert np.array_equal(r["participant_id"].astype(str), ids)
     return np.stack([r["prob"] for r in runs]), runs[0]["label"]
 
 
@@ -69,15 +75,14 @@ def run_metrics(prob, y):
 rows = []
 for model in cfg["models"]:
     for condition in cfg["conditions"]:
-        for source in ("seed", "mca"):
+        for source in SOURCES:
             runs = load_runs(source, model, condition)
             if runs is None or len(runs[0]) < 2:
                 continue
             prob, y = runs
             per_run = pd.DataFrame([run_metrics(p, y) for p in prob])
             pred = prob > THRESHOLD
-            row = dict(source="fuzzy" if source == "mca" else "seed", model=model,
-                       condition=condition, n_runs=len(prob))
+            row = dict(source=SOURCES[source], model=model, condition=condition, n_runs=len(prob))
             for k in per_run:
                 row[f"{k}_mean"] = per_run[k].mean()
                 row[f"{k}_std"] = per_run[k].std(ddof=1)
