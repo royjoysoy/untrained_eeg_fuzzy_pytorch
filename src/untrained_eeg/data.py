@@ -89,9 +89,13 @@ def preprocess_subject(cfg, participant_id):
     raw.set_eeg_reference("average", verbose="error")
     raw.filter(cfg["l_freq"], cfg["h_freq"], verbose="error")
     raw.resample(cfg["sfreq"], verbose="error")
-    data = raw.get_data() * 1e6  # volts -> microvolts
-
     events = pd.read_csv(eeg_dir / f"{stem}_events.tsv", sep="\t")
+    X, cond = cut_windows(cfg, raw.get_data() * 1e6, events)  # volts -> microvolts
+    return X, cond, raw.ch_names
+
+
+def cut_windows(cfg, data, events):
+    """Cut (n_channels, n_samples) data at cfg['sfreq'] into the windows of each complete block."""
     sf, win = cfg["sfreq"], int(cfg["window_s"] * cfg["sfreq"])
     n_win = int(cfg["segment_s"] / cfg["window_s"])
     X, cond = [], []
@@ -102,7 +106,7 @@ def preprocess_subject(cfg, participant_id):
         seg = data[:, start : start + n_win * win]
         X.append(seg.reshape(len(seg), n_win, win).transpose(1, 0, 2))
         cond += [condition] * n_win
-    return np.concatenate(X).astype(np.float32), np.array(cond), raw.ch_names
+    return np.concatenate(X).astype(np.float32), np.array(cond)
 
 
 def load_windows(cfg, participant_id, build=True):
@@ -110,10 +114,15 @@ def load_windows(cfg, participant_id, build=True):
     path = Path(cfg["cache_dir"]) / f"{participant_id}_run-{cfg['run']}.npz"
     if not path.exists():
         if not build:
-            raise SystemExit(f"Missing cache {path}. Run scripts/01_run_untrained.py first.")
-        X, cond, ch_names = preprocess_subject(cfg, participant_id)
+            raise SystemExit(f"Missing cache {path}. Run scripts/01_build_cache.py first.")
+        report = {}
+        if cfg.get("cleaning", "minimal") == "full":
+            from .clean import clean_subject  # needs pyprep, mne-icalabel, autoreject
+            X, cond, ch_names, report = clean_subject(cfg, participant_id)
+        else:
+            X, cond, ch_names = preprocess_subject(cfg, participant_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        np.savez(path, X=X, cond=cond, ch_names=ch_names)
+        np.savez(path, X=X, cond=cond, ch_names=ch_names, **report)
     f = np.load(path)
     return f["X"], f["cond"]
 

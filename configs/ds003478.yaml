@@ -29,6 +29,10 @@ bdi_low_max: 6     # BDI <= 6  -> low  (label 0)
 bdi_high_min: 17   # BDI >= 17 -> high (label 1); scores in between are dropped
 
 # --- Preprocessing -------------------------------------------------------
+# minimal: channels, average reference, band-pass, resample (data.py).
+# full: + line-noise notch, bad channels (PyPREP), ICA + ICLabel, autoreject
+#       (clean.py). Use a separate cache_dir, e.g. data/cache_full.
+cleaning: minimal
 l_freq: 1.0        # band-pass, Hz
 h_freq: 40.0
 sfreq: 128         # resample to this rate, Hz
