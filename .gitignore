@@ -26,3 +26,14 @@ preprocessed_ec_eo/
 *.npy
 *.pt
 *.joblib
+
+# LaTeX build files (paper/); figures are kept as PDF only
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.log
+paper/*.out
+paper/main.pdf
+paper/figures/*.png

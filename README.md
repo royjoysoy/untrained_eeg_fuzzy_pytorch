@@ -40,10 +40,11 @@ cd untrained_eeg_fuzzy_pytorch
 python -m venv ~/venv/untrained_eeg && source ~/venv/untrained_eeg/bin/activate
 pip install -r environment/requirements.txt
 
-bash scripts/00_download_data.sh /path/to/ds003478   # ~10 GB, skip if you have it
-export UNTRAINED_EEG_DATA=/path/to/ds003478
+# Optional: if you already have ds003478, point to it. Otherwise the first run
+# downloads it (run-01 files, 8.2 GB) into data/raw/ds003478.
+# export UNTRAINED_EEG_DATA=/path/to/ds003478
 
-python scripts/01_run_untrained.py   # first run preprocesses + caches the EEG (~5 min)
+python scripts/01_run_untrained.py   # first run downloads, preprocesses + caches the EEG
 ```
 
 You should see something like:
@@ -60,7 +61,7 @@ Prefer a notebook? Open [notebooks/quickstart.ipynb](notebooks/quickstart.ipynb)
 
 | Goal | Level | Where |
 |---|---|---|
-| List open EEG datasets | Beginner | [docs/datasets.md](docs/datasets.md) |
+| The six datasets, and how to add one | Beginner | [docs/datasets.md](docs/datasets.md) |
 | Run an untrained CNN on one dataset | Beginner | `scripts/01_run_untrained.py`, `notebooks/quickstart.ipynb` |
 | Compare across seeds | Intermediate | `scripts/02_seed_variability.py` |
 | Run with Fuzzy PyTorch (MCA) | Intermediate | `scripts/03_mca_variability.py`, [environment/fuzzy_container.md](environment/fuzzy_container.md) |

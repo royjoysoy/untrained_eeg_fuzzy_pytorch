@@ -6,7 +6,7 @@ Welcome! All levels are welcome. No EEG or deep-learning background needed for t
 
 | Goal | Level | Start here |
 |---|---|---|
-| List open EEG datasets | Beginner | `docs/datasets.md` |
+| The six datasets, and how to add one | Beginner | `docs/datasets.md` |
 | Run an untrained CNN on one dataset | Beginner | `notebooks/quickstart.ipynb` |
 | Compare across seeds | Intermediate | `scripts/02_seed_variability.py` |
 | Run with Fuzzy PyTorch (MCA) | Intermediate | `environment/fuzzy_container.md` |

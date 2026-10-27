@@ -1,11 +1,16 @@
 # Settings for OpenNeuro ds003478 v1.1.0 (resting EEG, depression).
 # Every script reads this file. Override it with --config path/to/other.yaml.
 
-# Where the BIDS dataset lives. Leave as null and set the environment variable
-# UNTRAINED_EEG_DATA instead, e.g.
+# Where the BIDS dataset lives. Leave as null to use data/raw/ds003478 in the repo,
+# downloaded automatically the first time (run-01 files only, 8.2 GB). To use an existing
+# copy (e.g. a shared /project folder), set data_dir or the environment variable
 #   export UNTRAINED_EEG_DATA=/path/to/ds003478
 # The environment variable wins if both are set.
 data_dir: null
+openneuro:
+  id: ds003478
+  version: "1.1.0"
+  include: [participants.tsv, participants.json, dataset_description.json, CHANGES, "*_run-01_*"]
 
 # Where preprocessed windows and results are written (both git-ignored).
 cache_dir: data/cache
@@ -36,6 +41,19 @@ segment_s: 60      # each eyes-open / eyes-closed block is cut to 1 minute
 window_s: 2        # each minute is split into non-overlapping windows
 max_windows: null  # per participant and condition, evenly spaced; null = all.
                    # Set e.g. 20 for quick Fuzzy PyTorch runs (they are ~100x slower).
+
+# Other inputs, for pretrained models trained on different data. Each overrides the
+# settings above and is cached in <cache_dir>/<name>/. `pick` keeps a channel subset
+# after the 60-channel average reference; `ems` = braindecode's exponential moving
+# standardization (on microvolts).
+preprocessing:
+  bcic2a:  # pretrained ShallowFBCSPNet (braindecode tutorials, BCI IV 2a)
+    pick: [Fz, FC3, FC1, FCz, FC2, FC4, C5, C3, C1, Cz, C2, C4, C6,
+           CP3, CP1, CPz, CP2, CP4, P1, Pz, P2, POz]
+    l_freq: 4.0
+    h_freq: 38.0
+    sfreq: 250
+    ems: {factor_new: 0.001, init_block_size: 1000}
 
 # --- Models and variability ----------------------------------------------
 models: [cnn1d, shallow, eegnet]
