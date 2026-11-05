@@ -39,3 +39,13 @@ channels: [Fp1, Fp2, F3, F4, C3, C4, P3, P4, O1, O2, F7, F8, T3, T4, T5, T6, Fz,
 tasks:
   ad_vs_control: {column: Group, positive: [A], negative: [C]}
   ftd_vs_control: {column: Group, positive: [F], negative: [C]}
+
+# Regression tasks (scripts/regression.py): predict the participants.tsv column MMSE (Mini-Mental
+# State Examination, 0-30, lower = more impaired). Every control scores 30, so `mmse` over all
+# participants mostly repeats the patient vs control split; `mmse_patients` (Alzheimer's and FTD
+# only, 59 participants) asks for dementia severity; AD and FTD differ in MMSE, so `mmse_ad`
+# (Alzheimer's only, 36) asks it without the AD vs FTD difference.
+regression:
+  mmse: {column: MMSE}
+  mmse_patients: {column: MMSE, where: {Group: [A, F]}}
+  mmse_ad: {column: MMSE, where: {Group: [A]}}
