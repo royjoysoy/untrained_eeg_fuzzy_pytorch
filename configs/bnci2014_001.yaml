@@ -63,5 +63,6 @@ cv_seed: 0
 
 # Leakage: models trained on this dataset are left out.
 exclude:
+  reason: trained on this dataset (leakage)
   extractors: [shallow_pretrained]
   eegnetv4: [BNCI2014001]

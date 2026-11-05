@@ -25,7 +25,7 @@ details per task in `src/untrained_eeg/tasks.py`.
 
 Pretrained models get the input they were trained on, cached as variants of the same data
 (`preprocessing` in the configs, `COMMON_VARIANTS` in `data.py`): 4–38 Hz at 250 Hz with
-exponential moving standardization for the pretrained ShallowFBCSPNet, 200 or 250 Hz for the
+exponential moving standardization for the pretrained ShallowFBCSPNet, 200, 250 or 256 Hz for the
 foundation models (30 s windows for CodeBrain). A checkpoint is never evaluated on a dataset it
 was trained on (`exclude` in the configs, leakage table in `docs/pretrained_models.md`).
 

@@ -46,4 +46,5 @@ n_permutations: 200       # permutation test: fewer refits (each 5-class probe t
 # Bipolar derivations have no electrode positions: no foundation model and no EEGNetv4
 # (C3, Cz, C4) here.
 exclude:
+  reason: bipolar derivations, no electrode positions for the foundation models
   extractors: [eegpt, labram, bendr, cbramod, codebrain, eegdino_small, eegdino_medium, signal_jepa]

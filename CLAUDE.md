@@ -31,8 +31,10 @@ The repo is public and used by Brainhack beginners: keep it clean, short, and we
 - Phase 1: single models on every task. Phase 2: ensembles (seeds, checkpoints, models).
 - Fuzzy PyTorch / MCA is paused: variability is seeds, checkpoints and CV splits for now.
 - Paper: no Fuzzy/MCA angle (left for later work). Primary significance test: the median instance's
-  refit permutation (`scripts/permutation.py --ensemble`, statistic `median`); ensemble, best
-  instance and first instance are secondary.
+  refit permutation (`scripts/permutation.py --ensemble --maxt`, statistic `median`), max-T
+  corrected per task (each task's extractors are one family); ensemble, best instance and first
+  instance are secondary. Probe C = 1 is primary; nested C and PCA (`probe_sensitivity.py`) are
+  sensitivity analyses. BENDR is left out (`foundation.EXCLUDED`): we could not reproduce its input.
 - Same seed ≠ same weights across PyTorch builds (last-bit differences, e.g. torch 2.14 vs Fuzzy 2.2):
   run the seed baseline with the same build as the Fuzzy runs (normal rounding), or reuse saved weights.
 - Untrained and pretrained networks are compared the same way: frozen feature extractor (head removed)

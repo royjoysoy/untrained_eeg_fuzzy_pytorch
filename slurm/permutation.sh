@@ -3,6 +3,8 @@
 #   CONFIG=configs/ds004504.yaml sbatch slurm/permutation.sh     (after slurm/phase1.sh)
 # All instances: ensemble, median and best instance (more probes: --cpus-per-task=64 --time=24:00:00 on sbatch):
 #   CONFIG=configs/ds004504.yaml ARGS="--ensemble --permutations 10000" sbatch slurm/permutation.sh
+# Same with max-T correction (no early stop: about 3 to 10 times longer):
+#   CONFIG=configs/ds004504.yaml ARGS="--ensemble --maxt --permutations 10000" sbatch slurm/permutation.sh
 #SBATCH --account=def-glatard   # change to your allocation
 #SBATCH --job-name=permutation
 #SBATCH --time=12:00:00

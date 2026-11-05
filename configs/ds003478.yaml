@@ -29,7 +29,7 @@ channels: [
 ]
 
 # --- Labels: high vs low BDI ---------------------------------------------
-# Original study used BDI < 7 (low) vs BDI > 16 (high). TODO: confirm with Roy.
+# Original study used BDI < 7 (low) vs BDI > 16 (high): the same cutoffs for integer scores.
 bdi_low_max: 6     # BDI <= 6  -> low  (label 0)
 bdi_high_min: 17   # BDI >= 17 -> high (label 1); scores in between are dropped
 

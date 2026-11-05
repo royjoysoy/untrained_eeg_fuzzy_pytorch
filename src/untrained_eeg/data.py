@@ -37,6 +37,7 @@ def load_config(path=REPO / "configs" / "ds003478.yaml"):
 
 # Variants every dataset has: the sampling rates (and window) foundation models expect.
 COMMON_VARIANTS = {"fm128": {"sfreq": 128}, "fm200": {"sfreq": 200}, "fm250": {"sfreq": 250},
+                   "fm256": {"sfreq": 256},
                    "fm200_30s": {"sfreq": 200, "window_s": 30}}
 
 
@@ -320,17 +321,8 @@ def preprocess_subject(cfg, participant_id):
     eeg_dir = _data_dir(cfg) / participant_id / "eeg"
     stem = f"{participant_id}_task-Rest_run-{cfg['run']}"
     raw = mne.io.read_raw_eeglab(eeg_dir / f"{stem}_eeg.set", preload=True, verbose="error")
-    raw.pick(cfg["channels"])  # same channels, same order, for everyone
-    raw.set_eeg_reference("average", verbose="error")
-    if cfg.get("pick"):  # a variant's subset, taken after the 60-channel average reference
-        raw.pick([c.upper() for c in cfg["pick"]])
-    raw.filter(cfg["l_freq"], cfg["h_freq"], verbose="error")
-    raw.resample(cfg["sfreq"], verbose="error")
-    data = raw.get_data() * 1e6  # volts -> microvolts
-    if cfg.get("ems"):  # as in braindecode's tutorials, on the continuous recording
-        from braindecode.preprocessing import exponential_moving_standardize
-
-        data = exponential_moving_standardize(data, **cfg["ems"])
+    pick = [c.upper() for c in cfg["pick"]] if cfg.get("pick") else None  # this dataset's names are upper case
+    data, _ = _clean(raw, {**cfg, "pick": pick})
 
     events = pd.read_csv(eeg_dir / f"{stem}_events.tsv", sep="\t")
     sf, win = cfg["sfreq"], int(cfg["window_s"] * cfg["sfreq"])

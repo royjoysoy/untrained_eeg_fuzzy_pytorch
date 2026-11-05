@@ -6,7 +6,9 @@ Every instance (seed or checkpoint) is probed with the config's CV split. The fi
 instance of each extractor is also probed with --cv-seeds, the CV-split variability.
 
 Reads results/phase1/<dataset>/features (phase1_features.py). Writes, next to it:
-  metrics.csv            extractor, group, instance, task, cv_seed, n, auc, balanced_accuracy
+  metrics.csv            extractor, group, instance, task, cv_seed, n, auc, balanced_accuracy,
+                         and for within-subject tasks (motor imagery) auc_subject_mean / _sd, the
+                         per-subject AUC over subjects (auc pools all subjects' trials)
   predictions.csv.gz     out-of-fold P(class 1) per sample (prob_<k> per class for a
                          multi-class task), for the ensembles of phase 2
 
@@ -23,7 +25,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from untrained_eeg.data import load_config
-from untrained_eeg.tasks import probe, task_data, task_labels, task_names
+from untrained_eeg.tasks import WITHIN_SUBJECT, probe, subject_auc, task_data, task_labels, task_names
 
 
 def seed_range(text):
@@ -54,8 +56,11 @@ for ext_dir in sorted(p for p in (root / "features").iterdir() if p.is_dir()):
             X, y, groups, ids = task_data(f["feats"], f["cond"], f["participant_id"], task, labels)
             for cv_seed in cv_seeds:
                 prob, auc, bacc = probe(X, y, groups, task, cv_seed, cfg["cv_folds"])
+                # within-subject tasks: also the per-subject AUC (mean, SD over subjects)
+                subj = subject_auc(y, prob, groups) if task in WITHIN_SUBJECT else (np.nan, np.nan)
                 metrics.append(dict(extractor=ext_dir.name, group=str(f["group"]), instance=path.stem,
-                                    task=task, cv_seed=cv_seed, n=len(y), auc=auc, balanced_accuracy=bacc))
+                                    task=task, cv_seed=cv_seed, n=len(y), auc=auc, balanced_accuracy=bacc,
+                                    auc_subject_mean=subj[0], auc_subject_sd=subj[1]))
                 # P(class 1), or one column prob_<k> per class for a multi-class task
                 cols = {"prob": prob} if prob.ndim == 1 else {f"prob_{k}": prob[:, k] for k in range(prob.shape[1])}
                 preds.append(pd.DataFrame(dict(extractor=ext_dir.name, instance=path.stem, task=task,

@@ -10,7 +10,9 @@ results/metrics_summary.csv:
   ROC-AUC, plus per-participant stability of P(high BDI):
     prob_std     mean over participants of the std across runs
     sig_digits   mean significant digits shared by the runs (15.9 = identical)
-    flip_rate    fraction of participants whose predicted class changes across runs
+    disagreement chance that two different runs predict different classes for a participant,
+                 averaged over participants (2 p (1 - p) n / (n - 1), p the share of the n runs
+                 predicting high BDI); unlike "any run differs", it does not grow with n
 
     python scripts/summarize_metrics.py --config configs/ds003478.yaml
 """
@@ -90,7 +92,8 @@ for model in cfg["models"]:
                 row[f"{k}_max"] = per_run[k].max()
             row["prob_std"] = prob.std(axis=0, ddof=1).mean()
             row["sig_digits"] = significant_digits(prob).mean()
-            row["flip_rate"] = (pred.any(axis=0) & ~pred.all(axis=0)).mean()
+            share, n = pred.mean(axis=0), len(pred)
+            row["disagreement"] = (2 * share * (1 - share) * n / (n - 1)).mean()
             rows.append(row)
 
 if not rows:
@@ -106,5 +109,5 @@ for k in ("accuracy", "balanced_accuracy", "f1", "auc"):
                for m, s in zip(table[f"{k}_mean"], table[f"{k}_std"])]
 show["prob_std"] = table["prob_std"].map("{:.1e}".format)
 show["sig_digits"] = table["sig_digits"].map("{:.1f}".format)
-show["flip_rate"] = table["flip_rate"].map("{:.1%}".format)
+show["disagreement"] = table["disagreement"].map("{:.1%}".format)
 print(show.sort_values(["model", "condition", "source"]).to_string(index=False))
