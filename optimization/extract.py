@@ -1,0 +1,122 @@
+#!/usr/bin/env python
+"""Block features for the optimization study, in the phase-1 file layout.
+
+CNN configs (one process: one dataset, one or more configs, all their seeds):
+    python optimization/extract.py cnn --dataset ds003478 --data-root $S/data \
+        --out results/optimization/11-5-26 --configs grid --seeds 0-29
+    python optimization/extract.py cnn ... --grid-index 5      # one grid config (SLURM arrays)
+Handcrafted families:
+    python optimization/extract.py handcrafted --dataset ds003478 --data-root $S/data --out ... --jobs 8
+
+Writes <out>/<dataset>/features/cnn/<config>/seed###.npz and
+<out>/<dataset>/features/handcrafted/<family>.npz. Existing files are skipped (resumable),
+never overwritten. No labels are read.
+"""
+
+import argparse
+import os
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from optimization.common import block_features, dataset_config, embed, load_windows, save_features  # noqa: E402
+from optimization.arch import ArchConfig, ConfigurableCNN1d, ablation_grid, from_name, prepare_input  # noqa: E402
+
+
+def seed_range(text):
+    a, _, b = text.partition("-")
+    return list(range(int(a), int(b or a) + 1))
+
+
+def run_cnn(args, cfg, participants, windows, per_block):
+    pids = participants["participant_id"].tolist()
+    n_chans = windows[pids[0]][0].shape[1]
+    if args.grid_index is not None:
+        configs = [ablation_grid()[args.grid_index]]
+    elif args.configs == ["grid"]:
+        configs = ablation_grid()
+    else:
+        grid = {c.name(): (f, v, c) for f, v, c in ablation_grid()}  # keep grid labels when names match
+        configs = [grid.get(n, ("manual", n, from_name(n))) for n in args.configs]
+    for fac, val, arch in configs:
+        inputs = None  # built once per config (unc3 depends only on the config)
+        for seed in args.seeds:
+            out = args.out / args.dataset / "features" / "cnn" / arch.name() / f"seed{seed:03d}.npz"
+            if out.exists():
+                continue
+            if inputs is None:
+                inputs = {p: prepare_input(windows[p][0], arch) for p in pids}
+            t0 = time.time()
+            model = ConfigurableCNN1d(n_chans, arch, seed=seed)
+            rows = [block_features(embed(model, inputs[p]), windows[p][1], per_block) for p in pids]
+            meta = dict(kind="cnn", config=arch.name(), factor=fac, value=val, seed=seed,
+                        feature_dim=int(rows[0][0].shape[1]),
+                        receptive_field_s=arch.receptive_field() / cfg["sfreq"],
+                        extract_seconds=time.time() - t0, torch=torch.__version__,
+                        threads=torch.get_num_threads())
+            save_features(out, rows, pids, "untrained", meta)
+            print(f"{args.dataset} {arch.name():40s} seed{seed:03d} {meta['feature_dim']:6d} feats "
+                  f"{meta['extract_seconds']:.1f}s", flush=True)
+
+
+def _hand_one(X, cond, per_block, sfreq, names):
+    from optimization.handcrafted import block_features as hand
+    n = len(X) // per_block
+    blocks = X[: n * per_block].reshape(n, per_block, X.shape[1], X.shape[2])
+    out = [hand(np.concatenate(list(b), axis=1), sfreq, names) for b in blocks]  # windows -> block
+    return out, cond[::per_block][:n]
+
+
+def run_handcrafted(args, cfg, participants, windows, per_block):
+    from joblib import Parallel, delayed
+    from optimization.handcrafted import FAMILIES
+    root = args.out / args.dataset / "features" / "handcrafted"
+    if all((root / f"{f}.npz").exists() for f in FAMILIES):
+        return
+    pids = participants["participant_id"].tolist()
+    n_ch = windows[pids[0]][0].shape[1]
+    names = [str(c) for c in cfg["channels"]]
+    if len(names) != n_ch:
+        names = [f"ch{i}" for i in range(n_ch)]
+    t0 = time.time()
+    res = Parallel(n_jobs=args.jobs)(delayed(_hand_one)(*windows[p], per_block, cfg["sfreq"], names)
+                                     for p in pids)
+    secs = time.time() - t0
+    for fam in FAMILIES:
+        out = root / f"{fam}.npz"
+        if out.exists():
+            continue
+        rows = [(np.stack([b[fam][0] for b in blocks]), cond) for blocks, cond in res]
+        meta = dict(kind="handcrafted", config=fam, feature_dim=int(rows[0][0].shape[1]),
+                    extract_seconds_all_families=secs, n_jobs=args.jobs)
+        if fam.startswith("riemann"):
+            n = n_ch
+            k = n * (n + 1) // 2
+            meta["spd_blocks"] = [[i * k, n] for i in range(rows[0][0].shape[1] // k)]
+        save_features(out, rows, pids, "handcrafted", meta)
+        print(args.dataset, fam, rows[0][0].shape, flush=True)
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("kind", choices=["cnn", "handcrafted"])
+    p.add_argument("--dataset", required=True)
+    p.add_argument("--data-root", type=Path, default=None)
+    p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--configs", nargs="+", default=["default"], help="'grid' or config names")
+    p.add_argument("--grid-index", type=int, default=None)
+    p.add_argument("--seeds", type=seed_range, default=list(range(30)))
+    p.add_argument("--jobs", type=int, default=1)
+    a = p.parse_args()
+    torch.set_num_threads(int(os.environ.get("SLURM_CPUS_PER_TASK", 1)))
+    cfg = dataset_config(a.dataset, a.data_root)
+    participants, windows, per_block = load_windows(cfg)
+    (run_cnn if a.kind == "cnn" else run_handcrafted)(a, cfg, participants, windows, per_block)
+
+
+if __name__ == "__main__":
+    main()
