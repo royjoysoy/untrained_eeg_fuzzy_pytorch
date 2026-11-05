@@ -25,6 +25,11 @@ embedding axes kept, play the role of the CNN features. How to average is set pe
                  REVE's position bank, each channel z-scored over the participant's recording
                  and clipped at 15 SD, as in its pretraining (`zscore_recording`)
   reve_large     REVE large, same input
+  neurogpt       Neuro-GPT's EEG encoder (an EEG Conformer, authors' wenhuic repository),
+                 250 Hz, its 22 TUH channels (channels the dataset lacks interpolated by
+                 `tuh22_matrix`) re-referenced to their average, each channel z-scored over the
+                 participant's recording, 2 s chunks; features = the 1,080-value chunk embedding
+                 its GPT reads (27 time tokens x 40)
 """
 
 import importlib
@@ -41,6 +46,11 @@ from .data import REPO
 HF_HOME = REPO / "data" / "pretrained" / "hf"  # set as HF_HOME by the scripts and jobs
 REVE_POSITIONS = REPO / "data" / "pretrained" / "reve"  # REVE's position bank (reve_positions.json)
 
+# Neuro-GPT's 22 channels, in its order (T3-T6 under their new names; T1, T2 placed at FT9, FT10,
+# which they approximately are)
+TUH22 = ["Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T1", "T7", "C3", "Cz", "C4", "T8", "T2",
+         "P7", "P3", "Pz", "P4", "P8", "O1", "Oz", "O2"]
+AT = {"T1": "FT9", "T2": "FT10"}
 TEN20 = ["Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T7", "C3", "Cz", "C4", "T8",
          "P7", "P3", "Pz", "P4", "P8", "O1", "O2"]
 ALIASES = {"T3": "T7", "T4": "T8", "T5": "P7", "T6": "P8"}  # old 10-20 names
@@ -56,6 +66,7 @@ FOUNDATION = {  # key: class, repo, sfreq, channels, window_s (None = the datase
     "signal_jepa": ("SignalJEPA", "braindecode/signal-jepa", 128, "lee2019", None, "uv", "hub"),
     "reve_base": ("REVE", "brain-bzh/reve-base", 200, "all", None, "zscore", "manual"),
     "reve_large": ("REVE", "brain-bzh/reve-large", 200, "all", None, "zscore", "manual"),
+    "neurogpt": ("EEGConformer", "wenhuic/Neuro-GPT", 250, "tuh22", None, "zscore_noclip", "neurogpt"),
 }
 VARIANT = {200: "fm200", 250: "fm250", 256: "fm256", 128: "fm128"}  # sampling rate -> preprocessing variant
 # Extracted but left out of the ensemble pools and of every test family, for a reason found on the
@@ -68,14 +79,42 @@ EXCLUDED = {"bendr": "input not reproduced: near-constant features (median SD ac
 # (channels * patches), averaged over each channel's patches; "time" = time tokens, averaged.
 # Others return (batch, channels, patches, dim), averaged over patches, or (batch, dim).
 TOKENS = {"labram": "channels", "eegdino_small": "channels", "eegdino_medium": "channels",
-          "signal_jepa": "channels", "eegpt": "time"}
+          "signal_jepa": "channels", "eegpt": "time", "neurogpt": "flat"}
+NEUROGPT_TIMES = 500  # Neuro-GPT's encoder reads 2 s chunks at 250 Hz
 
 
 def zscore_recording(X, clip=15.0):
     """REVE's input: each channel z-scored over one participant's windows (n_windows, n_chans,
-    n_times), then clipped at 15 SD, as REVE's pretraining did per recording."""
+    n_times), then clipped at 15 SD, as REVE's pretraining did per recording (clip=None: not
+    clipped, as for Neuro-GPT)."""
     mean, sd = X.mean(axis=(0, 2), keepdims=True), X.std(axis=(0, 2), keepdims=True)
-    return np.clip((X - mean) / np.maximum(sd, 1e-6), -clip, clip).astype(X.dtype)
+    Z = (X - mean) / np.maximum(sd, 1e-6)
+    return (Z if clip is None else np.clip(Z, -clip, clip)).astype(X.dtype)
+
+
+def tuh22_matrix(names):
+    """(22, n) matrix taking the dataset's n channels to Neuro-GPT's 22, average-referenced.
+
+    Channels the dataset has are copied; the others are interpolated with spherical splines
+    from all its channels (MNE's interpolate_bads, run on an identity matrix to get the
+    weights), then all 22 are re-referenced to their average, as in Neuro-GPT's pretraining.
+    Its authors mapped their own downstream data (BCI IV 2a) the same way, with another
+    interpolation (a forward and inverse model).
+    """
+    import mne
+
+    placed = set(mne.channels.make_standard_montage("standard_1005").ch_names)
+    used = [c for c in names if c in placed]  # channels without a position (e.g. EOG) are not used
+    targets = [AT.get(c, c) for c in TUH22]
+    missing = [c for c in targets if c not in used]
+    info = mne.create_info(used + missing, 250.0, "eeg")
+    info.set_montage("standard_1005", verbose="error")
+    info["bads"] = missing
+    eye = np.vstack([np.eye(len(used)), np.zeros((len(missing), len(used)))])
+    W = mne.EvokedArray(eye, info, verbose="error").interpolate_bads(origin="auto", verbose="error").data
+    out = np.zeros((len(targets), len(names)))
+    out[:, [names.index(c) for c in used]] = W[[info.ch_names.index(c) for c in targets]]
+    return (out - out.mean(axis=0)).astype(np.float32)
 
 
 def variant_of(key):
@@ -117,6 +156,9 @@ def _build(cls_name, repo, names, sfreq, n_times, how):
     cls = getattr(M, cls_name)
     if how == "hub":
         model = cls.from_pretrained(repo, **kw)
+    elif how == "neurogpt":  # an EEG Conformer of 6 layers; the original's other settings are braindecode's defaults
+        model = cls(**kw, num_layers=6, return_features=True)
+        load_neurogpt(model, hf_hub_download(repo, "pretrained_model/pytorch_model.bin"))
     else:  # build for our input, then load what fits (see the notes in load_weights)
         cfg = json.load(open(hf_hub_download(repo, "config.json")))
         sig = inspect.signature(cls.__init__).parameters
@@ -133,6 +175,25 @@ def _build(cls_name, repo, names, sfreq, n_times, how):
         model = cls(**kw, **extra)
         load_weights(model, hf_hub_download(repo, "model.safetensors"))
     return model.eval()
+
+
+def load_neurogpt(model, path):
+    """Neuro-GPT's encoder weights (its GPT is left out) into braindecode's EEGConformer.
+
+    The names match once the "encoder." prefix is removed. The original attention divides by
+    sqrt(40) (the embedding size), braindecode's by sqrt(4) (the head size): the query
+    weights are scaled by sqrt(4 / 40) so the attention is the original one.
+    """
+    state = torch.load(path, map_location="cpu", weights_only=True)
+    state = {k.removeprefix("encoder."): v for k, v in state.items() if k.startswith("encoder.")}
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    if unexpected or any(not k.startswith(("fc.", "final_layer.")) for k in missing):
+        raise RuntimeError(f"Neuro-GPT weights do not fit: missing {missing}, unexpected {unexpected}")
+    with torch.no_grad():
+        for block in model.transformer:
+            att = block[0].fn[1]
+            att.queries.weight.mul_((att.head_dim / att.emb_size) ** 0.5)
+            att.queries.bias.mul_((att.head_dim / att.emb_size) ** 0.5)
 
 
 def load_weights(model, path):
@@ -159,14 +220,18 @@ def load_weights(model, path):
 
 class Foundation(nn.Module):
     """A foundation model fed the dataset's windows (batch, n_chans, n_times) in microvolts
-    (REVE: already z-scored per recording by `zscore_recording`)."""
+    (REVE and Neuro-GPT: after `prepare`, over the participant's windows)."""
 
     def __init__(self, key, ch_names, n_times):
         super().__init__()
         cls_name, repo, sfreq, chans, _, self.scale, how = FOUNDATION[key]
         names = standard_names(ch_names)
+        self.mix = None  # Neuro-GPT: (22, n_chans) channel mapping, applied in prepare()
         if chans == "ten20":
             want = TEN20
+        elif chans == "tuh22":  # mixed in prepare(): the model sees the 22 channels in order
+            self.mix = tuh22_matrix(names)
+            names = want = TUH22
         elif chans == "lee2019":
             lee = {c.upper() for c in _lee2019_names()}
             want = [c for c in names if c.upper() in lee]
@@ -181,7 +246,22 @@ class Foundation(nn.Module):
         self.model = _build(cls_name, repo, want, sfreq, n_times, how)
         if cls_name == "REVE" and len(self.model.default_pos) != self.n_chans:  # it only warns
             raise ValueError(f"{key}: REVE's position bank lacks some of {want}")
+        if cls_name == "EEGConformer" and n_times != NEUROGPT_TIMES:
+            raise ValueError(f"{key}: takes 2 s chunks at 250 Hz ({NEUROGPT_TIMES} samples), not {n_times}")
         self.fwd = {"ch_names": want} if cls_name == "Labram" else {}
+        if cls_name != "EEGConformer":  # built with return_features=True
+            self.fwd["return_features"] = True
+
+    def prepare(self, X):
+        """Steps over one participant's windows (its recording, numpy), before the model:
+        Neuro-GPT's channel mapping, and REVE's and Neuro-GPT's z-score per recording."""
+        if self.mix is not None:
+            X = np.einsum("ij,wjt->wit", self.mix, X)
+        if self.scale == "zscore":
+            X = zscore_recording(X)
+        elif self.scale == "zscore_noclip":
+            X = zscore_recording(X, clip=None)
+        return X
 
     def forward(self, x):
         x = x[:, self.idx]
@@ -192,7 +272,7 @@ class Foundation(nn.Module):
         elif self.scale == "minmax":  # per window and channel, to [-1, 1]
             lo, hi = x.amin(-1, keepdim=True), x.amax(-1, keepdim=True)
             x = 2 * (x - lo) / (hi - lo).clamp_min(1e-6) - 1
-        out = self.model(x, return_features=True, **self.fwd)
+        out = self.model(x, **self.fwd)
         f = out["features"] if isinstance(out, dict) else out
         if f.dim() == 4:  # (batch, channels, patches, dim): average the time patches
             f = f.mean(dim=2)
@@ -202,6 +282,8 @@ class Foundation(nn.Module):
             f = f.reshape(f.shape[0], self.n_chans, -1, f.shape[-1]).mean(dim=2)
         elif f.dim() == 3 and self.tokens == "time":  # (batch, time tokens, dim)
             f = f.mean(dim=1)
+        elif f.dim() == 3 and self.tokens == "flat":  # Neuro-GPT: the chunk embedding, as its GPT reads it
+            f = f.flatten(1)
         elif f.dim() != 2:
             raise ValueError(f"unexpected feature shape {tuple(f.shape)}: set the model's TOKENS")
         return f

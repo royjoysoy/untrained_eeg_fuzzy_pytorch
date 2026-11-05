@@ -14,7 +14,8 @@ Extractors (each with the input its weights expect):
   scattering               Mallat's wavelet scattering (fixed wavelets, no weights), one
                            instance per largest scale J = 3..8 ("standard" input)
   eegpt, labram, bendr, cbramod, codebrain, eegdino_small, eegdino_medium, signal_jepa,
-  reve_base, reve_large    pretrained foundation models (src/untrained_eeg/foundation.py), one
+  reve_base, reve_large,
+  neurogpt                 pretrained foundation models (src/untrained_eeg/foundation.py), one
                            instance each, each with its own sampling rate, channels and window
 
 Extractors whose input the dataset lacks (channels, or a preprocessing variant) are skipped.
@@ -38,7 +39,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from untrained_eeg.data import COMMON_VARIANTS, load_config, load_dataset, same_as_standard, variant_config
-from untrained_eeg.foundation import FOUNDATION, HF_HOME, Foundation, variant_of, zscore_recording
+from untrained_eeg.foundation import FOUNDATION, HF_HOME, Foundation, variant_of
 from untrained_eeg.models import WaveletScattering, build_model, embed
 from untrained_eeg.pretrained import EEGNETV4_CHANNELS, EEGNETV4_DATASETS, SHALLOW_CHECKPOINTS, load_eegnetv4, load_shallow
 
@@ -77,8 +78,8 @@ def instances(name, seeds, cfg):
 def block_features(model, windows, per_block):
     """Mean feature vector of each block: (n_blocks, n_features), plus block conditions."""
     X, cond = windows
-    if getattr(model, "scale", None) == "zscore":  # REVE: one participant's windows = its recording
-        X = zscore_recording(X)
+    if isinstance(model, Foundation):  # REVE, Neuro-GPT: one participant's windows = its recording
+        X = model.prepare(X)
     f = embed(model, X)
     n = len(X) // per_block
     return f[: n * per_block].reshape(n, per_block, -1).mean(axis=1), cond[::per_block][:n]
