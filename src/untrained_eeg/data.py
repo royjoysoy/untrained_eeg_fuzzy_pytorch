@@ -255,6 +255,34 @@ def preprocess_resting(cfg, participant_id):
     return X, np.array([cfg["condition"]] * len(X)), ch_names
 
 
+def preprocess_rest_spans(cfg, participant_id):
+    """Resting spans marked by events in a task recording (ds003490: 1 min eyes closed, 1 min open).
+
+    The session is the one listed as `session_med` (e.g. OFF) in participants.tsv for patients,
+    the first one for participants with a single session. Each span starts at the first event
+    of its `rest_spans` codes and lasts `segment_s`; it is cleaned like a resting recording.
+    """
+    import mne
+
+    p = pd.read_csv(_data_dir(cfg) / "participants.tsv", sep="\t").set_index("participant_id").loc[participant_id]
+    session = "02" if p["sess2_Med"] == cfg["session_med"] else "01"
+    path = _data_dir(cfg) / cfg["recording"].format(pid=participant_id, session=session)
+    raw = mne.io.read_raw_eeglab(path, preload=True, verbose="error")
+    events = pd.read_csv(str(path).replace("_eeg.set", "_events.tsv"), sep="\t")
+    data, ch_names = _clean(raw, cfg)
+    win, n_win = int(cfg["window_s"] * cfg["sfreq"]), int(cfg["segment_s"] / cfg["window_s"])
+    X, cond = [], []
+    for condition, codes in cfg["rest_spans"].items():
+        onsets = events.loc[events["value"].astype(str).str.strip().isin(codes), "onset"]
+        if onsets.empty or int(round(onsets.min() * cfg["sfreq"])) + n_win * win > data.shape[1]:
+            continue  # span missing or cut short
+        start = int(round(onsets.min() * cfg["sfreq"]))
+        seg = data[:, start : start + n_win * win]
+        X.append(seg.reshape(len(seg), n_win, win).transpose(1, 0, 2))
+        cond += [condition] * n_win
+    return np.concatenate(X).astype(np.float32), np.array(cond), ch_names
+
+
 def _segments(data, cfg):
     """Windows of every complete `segment_s` segment: (n_windows, n_channels, n_times)."""
     win = int(cfg["window_s"] * cfg["sfreq"])
@@ -346,7 +374,8 @@ def load_windows(cfg, participant_id, build=True):
         if not build:
             raise SystemExit(f"Missing cache {path}. Run scripts/01_run_untrained.py first.")
         prep = {"resting": preprocess_resting, "bnci": preprocess_bnci,
-                "lemon": preprocess_lemon, "sleep": preprocess_sleep}.get(cfg.get("loader"), preprocess_subject)
+                "lemon": preprocess_lemon, "sleep": preprocess_sleep,
+                "rest_spans": preprocess_rest_spans}.get(cfg.get("loader"), preprocess_subject)
         X, cond, ch_names = prep(cfg, participant_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez(path, X=X, cond=cond, ch_names=ch_names)

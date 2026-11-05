@@ -79,6 +79,11 @@ pretraining list, "?" = list not checked or not published.
 | ST-EEGFormer | ? | ? | ? | ? | ? | ? |
 | BIOT, DIVER-1, NeuroRVQ, SleepFM | ? | ? | ? | ? | ? | ? |
 
+ds003490 (Parkinson's replication): ok for every model we run. It is in none of the pretraining
+lists: LaBraM (no Parkinson's data, [paper](https://arxiv.org/abs/2405.18765) App. D), REVE
+(appendix B; its Cavanagh dataset is ds004315), EEGPT, and the TUEG-only, Lee2019-only and
+MOABB motor-imagery checkpoints.
+
 ## Out of scope
 
 - **Intracranial (sEEG/iEEG):** BrainBERT, PopT, Brant, MVPFormer, BaRISTA, MAPA.

@@ -10,8 +10,8 @@ length and its amplitude scale. Its features, averaged over time patches with ch
 embedding axes kept, play the role of the CNN features. How to average is set per model
 (`TOKENS`), not guessed from the output's shape.
 
-  eegpt          EEGPT, 256 Hz, all channels, millivolts (as in the authors' pretraining script;
-                 braindecode's model card says 250 Hz, the authors pretrain and evaluate at 256)
+  eegpt          EEGPT, 256 Hz, the channels in its table, millivolts (as in the authors' pretraining
+                 script; braindecode's model card says 250 Hz, the authors pretrain and evaluate at 256)
   labram         LaBraM, 200 Hz, all channels, microvolts / 100 (0.1 mV units)
   bendr          InterpolatedBENDR, 250 Hz, any montage projected onto BENDR's 19 + SCALE,
                  each channel min-max scaled to [-1, 1] (assumed from BENDR's pipeline)
@@ -237,6 +237,10 @@ class Foundation(nn.Module):
             want = [c for c in names if c.upper() in lee]
         else:
             want = names
+        if cls_name == "EEGPT":  # channels outside its table would get another channel's embedding
+            from braindecode.models.eegpt import CHANNEL_DICT
+
+            want = [c for c in want if c.upper() in CHANNEL_DICT]
         missing = [c for c in want if c not in names]
         if missing:
             raise ValueError(f"{key}: the dataset lacks {missing}")
