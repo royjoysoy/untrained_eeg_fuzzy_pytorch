@@ -18,11 +18,12 @@ The repo is public and used by Brainhack beginners: keep it clean, short, and we
 - Trained models: all publicly available pretrained checkpoints for scalp EEG (CNNs and foundation
   models such as LaBraM), including pretrained EEGNet and ShallowFBCSPNet next to their untrained
   versions. Same frozen features + probe for every model. We do not train our own models.
-  Open weights only (registration-gated ones such as REVE are out); CC BY-NC weights are fine.
+  Open weights only (no registration); CC BY-NC weights are fine. REVE's weights became open in
+  2026-09 (REVE Responsible Use License), so REVE base and large are in (out on ds002778: leakage).
   Pretrained EEGNet/ShallowFBCSPNet load into plain-PyTorch copies in `models.py` (no braindecode in
   Fuzzy); loaders in `pretrained.py`, checked bit-identical to braindecode 1.8.1 by
   `tests/test_pretrained.py`. Weights go in `data/pretrained/` (`scripts/00_download_pretrained.sh`).
-  Foundation models (`foundation.py`: EEGPT, LaBraM, BENDR, CBraMod, CodeBrain, EEG-DINO, Signal-JEPA)
+  Foundation models (`foundation.py`: EEGPT, LaBraM, BENDR, CBraMod, CodeBrain, EEG-DINO, Signal-JEPA, REVE)
   run through braindecode 1.8.1 itself, each with its pretraining input (rate, channels, window, scale).
 - Run `tests/test_models.py` and `tests/test_pretrained.py` with `--noconftest` outside the
   container (`tests/conftest.py` is for the EC experiment and needs the Fuzzy container).

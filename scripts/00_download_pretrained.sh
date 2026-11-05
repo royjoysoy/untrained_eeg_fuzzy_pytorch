@@ -25,8 +25,12 @@ for repo in plot_bcic_iv_2a_moabb_trial plot_bcic_iv_2a_moabb_cropped; do
     echo "downloaded $dest"
 done
 
-# Foundation models (src/untrained_eeg/foundation.py): braindecode's Hugging Face repositories,
-# cached in data/pretrained/hf. Compute nodes have no internet: the jobs read this cache offline.
+# Foundation models (src/untrained_eeg/foundation.py): braindecode's Hugging Face repositories
+# (REVE: its authors' brain-bzh repositories, REVE Responsible Use License v1.0), cached in
+# data/pretrained/hf. Compute nodes have no internet: the jobs read this cache offline.
+mkdir -p data/pretrained/reve  # REVE's electrode position bank
+curl -sfL https://huggingface.co/brain-bzh/reve-positions/resolve/main/positions.json \
+    -o data/pretrained/reve/reve_positions.json
 HF_HOME="$PWD/data/pretrained/hf" python3 - <<'PY'
 import sys
 sys.path.insert(0, "src")

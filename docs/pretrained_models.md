@@ -33,7 +33,8 @@ accept other channel sets through electrode names or positions).
 | NeuroRVQ (EEG) | 1 ([neurorvq-eeg-pretrained](https://huggingface.co/braindecode/neurorvq-eeg-pretrained)) | 19 · 200 Hz · 4 s | ? | CC BY-NC 4.0 |
 | SleepFM | 1 ([SleepFM](https://huggingface.co/braindecode/SleepFM)) | 4 · 128 Hz · 30 s | Polysomnography, ? | CC BY-NC 4.0 |
 | ZUNA | 1 ([ZUNA](https://huggingface.co/braindecode/ZUNA)) | any (positions) · 256 Hz · 5 s | TUH + 208 public sets, mostly OpenNeuro, list not in the paper ([paper](https://arxiv.org/abs/2602.18478)) | Apache-2.0 |
-| REVE | base, large ([brain-bzh/reve-base](https://huggingface.co/brain-bzh/reve-base)) | any (positions) · 200 Hz | 92 sources, 61,415 h: OpenNeuro, MOABB, TUH ([paper](https://arxiv.org/abs/2510.21585), appendix) | Registration required: **excluded** (open weights only) |
+| REVE | base, large ([brain-bzh/reve-base](https://huggingface.co/brain-bzh/reve-base), [reve-large](https://huggingface.co/brain-bzh/reve-large)) | any (positions) · 200 Hz | 92 sources, 61,415 h: OpenNeuro, MOABB, TUH ([paper](https://arxiv.org/abs/2510.21585), appendix B) | REVE Responsible Use License v1.0 (research use allowed; no re-identification); no registration since 2026-09 |
+| Neuro-GPT | 1 ([wenhuic/Neuro-GPT](https://huggingface.co/wenhuic/Neuro-GPT)); encoder = EEG Conformer, loads into braindecode's `EEGConformer` (attention scaled by √40 in the original, by √(head dim) in braindecode 1.8.1) | 22 TUH channels (10-20 + T1, T2, Oz), average reference · 250 Hz · 2 s chunks, each channel z-scored over the recording | TUEG, 20,000 recordings ([paper](https://arxiv.org/abs/2311.03764)) | GPL-3.0 |
 | Masking ablations | ~60 MAE/JEPA checkpoints ([PierreGtch](https://huggingface.co/PierreGtch)) | ? | ? | ? |
 
 ## Ported
@@ -42,7 +43,7 @@ accept other channel sets through electrode names or positions).
 |---|---|---|---|
 | EEGNetv4 (12) | `load_eegnetv4` in `src/untrained_eeg/pretrained.py`; weights from `scripts/00_download_pretrained.sh` | `tests/test_pretrained.py`: bit-identical features to braindecode 1.8.1 | Feed C3, Cz, C4 (`C3, CZ, C4` in our config) at 128 Hz, in microvolts |
 | ShallowFBCSPNet (2) | `load_shallow` in `src/untrained_eeg/pretrained.py`; same download script (safetensors) | `tests/test_pretrained.py`: bit-identical features to braindecode 1.8.1 | Feed the 22 BCI IV 2a channels at 250 Hz, microvolts, band-pass 4-38 Hz, exponential moving standardization (factor_new=1e-3, init_block_size=1000) |
-| EEGPT, LaBraM, BENDR (interpolated), CBraMod, CodeBrain, EEG-DINO small and medium, Signal-JEPA | `Foundation` in `src/untrained_eeg/foundation.py`, through braindecode 1.8.1 (not plain PyTorch: Fuzzy is paused); weights from the braindecode Hugging Face page, cached in `data/pretrained/hf` | Every pretrained tensor must load (only EEGPT's channel table, rebuilt for our channels, and the heads are left out) | Each gets its pretraining rate (200, 250, 256 or 128 Hz; EEGPT 256 Hz as in the authors' code, not the 250 Hz of braindecode's card), channels (all, the 19 of 10-20, or Lee2019's) and scale; CodeBrain needs 30 s windows. EEGPT in millivolts, as in the authors' pretraining script ([prepare_pretrain_dataset.py](https://github.com/BINE022/EEGPT/blob/ea7282f698c406cd423ccbedbe9960853761144c/datasets/pretrain/prepare_pretrain_dataset.py)); BENDR min-max scaled is an assumption |
+| EEGPT, LaBraM, BENDR (interpolated), CBraMod, CodeBrain, EEG-DINO small and medium, Signal-JEPA, REVE base and large | `Foundation` in `src/untrained_eeg/foundation.py`, through braindecode 1.8.1 (not plain PyTorch: Fuzzy is paused); weights from the braindecode Hugging Face page, cached in `data/pretrained/hf` | Every pretrained tensor must load (only EEGPT's channel table, rebuilt for our channels, and the heads are left out) | Each gets its pretraining rate (200, 250, 256 or 128 Hz; EEGPT 256 Hz as in the authors' code, not the 250 Hz of braindecode's card), channels (all, the 19 of 10-20, or Lee2019's) and scale; CodeBrain needs 30 s windows. EEGPT in millivolts, as in the authors' pretraining script ([prepare_pretrain_dataset.py](https://github.com/BINE022/EEGPT/blob/ea7282f698c406cd423ccbedbe9960853761144c/datasets/pretrain/prepare_pretrain_dataset.py)); BENDR min-max scaled is an assumption. REVE: weights from its authors' repositories (they load into braindecode's `REVE` with no renaming; only `cls_query_token`, for attention pooling, is unused), electrodes placed by REVE's position bank (`data/pretrained/reve`), each channel z-scored over the participant's windows and clipped at 15 SD (its paper, section 3.1.1); REVE large runs on a GPU (`slurm/phase1_gpu.sh`) |
 
 BENDR as a frozen extractor: we could not reproduce its pretraining input. With our input its
 features are nearly constant (median SD across blocks 0.0004, against 0.2 to 0.9 for EEGPT and
@@ -72,7 +73,8 @@ pretraining list, "?" = list not checked or not published.
 | LaBraM | ok | ok | ok | ok | ok | ok |
 | BENDR, CBraMod, CodeBrain, EEG-DINO (TUEG only) | ok | ok | ok | ok | ok | ok |
 | BrainOmni | ok | ok (downstream set) | ok (downstream set) | ? | ? | ? |
-| REVE | ? | ? | **leak** (ds002778 in pretraining) | ? | ? | ? |
+| REVE | ok | ok | **leak** (ds002778 in pretraining) | ok | ok (BCIC-IV-2a is a downstream set) | ok |
+| Neuro-GPT (TUEG only) | ok | ok | ok | ok | ok (downstream set) | ok |
 | ZUNA | ? | ? | ? | ? | ? | ? |
 | ST-EEGFormer | ? | ? | ? | ? | ? | ? |
 | BIOT, DIVER-1, NeuroRVQ, SleepFM | ? | ? | ? | ? | ? | ? |
@@ -86,7 +88,8 @@ pretraining list, "?" = list not checked or not published.
 
 ## Decisions (Roy, 2026-10-09)
 
-- Open weights only: REVE (registration required) is excluded.
+- Open weights only: REVE (registration required) is excluded. Update 2026-10-23: REVE's weights
+  no longer need registration (REVE Responsible Use License v1.0, 2026-09-14), so REVE is in.
 - CC BY-NC checkpoints (NeuroRVQ, SleepFM) are fine.
 - ZUNA pretrains on large parts of OpenNeuro: keep it only for tasks we can prove are
   outside its corpus.

@@ -13,4 +13,4 @@ set -euo pipefail
 module load python/3.11
 source "${VENV:-$HOME/venv/untrained_eeg}/bin/activate"
 export OMP_NUM_THREADS=1  # one probe per worker
-python scripts/probe_sensitivity.py --config "${CONFIG:-configs/ds003478.yaml}" --probe "${PROBE:-pca}"
+python scripts/probe_sensitivity.py --config "${CONFIG:-configs/ds003478.yaml}" --probe "${PROBE:-pca}" ${ARGS:-}

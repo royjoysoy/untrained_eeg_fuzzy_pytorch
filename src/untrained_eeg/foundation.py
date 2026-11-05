@@ -21,11 +21,16 @@ embedding axes kept, play the role of the CNN features. How to average is set pe
   eegdino_medium EEG-DINO medium, same input
   signal_jepa    Signal-JEPA with its Lee2019 channel embeddings, 128 Hz, the dataset's
                  channels that Lee2019 has, microvolts
+  reve_base      REVE base (authors' brain-bzh repository), 200 Hz, all channels placed by
+                 REVE's position bank, each channel z-scored over the participant's recording
+                 and clipped at 15 SD, as in its pretraining (`zscore_recording`)
+  reve_large     REVE large, same input
 """
 
 import importlib
 import inspect
 import json
+import os
 
 import numpy as np
 import torch
@@ -34,6 +39,7 @@ from torch import nn
 from .data import REPO
 
 HF_HOME = REPO / "data" / "pretrained" / "hf"  # set as HF_HOME by the scripts and jobs
+REVE_POSITIONS = REPO / "data" / "pretrained" / "reve"  # REVE's position bank (reve_positions.json)
 
 TEN20 = ["Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T7", "C3", "Cz", "C4", "T8",
          "P7", "P3", "Pz", "P4", "P8", "O1", "O2"]
@@ -48,6 +54,8 @@ FOUNDATION = {  # key: class, repo, sfreq, channels, window_s (None = the datase
     "eegdino_small": ("EEGDINO", "braindecode/eegdino-small-pretrained", 200, "ten20", None, "0.1mv", "hub"),
     "eegdino_medium": ("EEGDINO", "braindecode/eegdino-medium-pretrained", 200, "ten20", None, "0.1mv", "hub"),
     "signal_jepa": ("SignalJEPA", "braindecode/signal-jepa", 128, "lee2019", None, "uv", "hub"),
+    "reve_base": ("REVE", "brain-bzh/reve-base", 200, "all", None, "zscore", "manual"),
+    "reve_large": ("REVE", "brain-bzh/reve-large", 200, "all", None, "zscore", "manual"),
 }
 VARIANT = {200: "fm200", 250: "fm250", 256: "fm256", 128: "fm128"}  # sampling rate -> preprocessing variant
 # Extracted but left out of the ensemble pools and of every test family, for a reason found on the
@@ -61,6 +69,13 @@ EXCLUDED = {"bendr": "input not reproduced: near-constant features (median SD ac
 # Others return (batch, channels, patches, dim), averaged over patches, or (batch, dim).
 TOKENS = {"labram": "channels", "eegdino_small": "channels", "eegdino_medium": "channels",
           "signal_jepa": "channels", "eegpt": "time"}
+
+
+def zscore_recording(X, clip=15.0):
+    """REVE's input: each channel z-scored over one participant's windows (n_windows, n_chans,
+    n_times), then clipped at 15 SD, as REVE's pretraining did per recording."""
+    mean, sd = X.mean(axis=(0, 2), keepdims=True), X.std(axis=(0, 2), keepdims=True)
+    return np.clip((X - mean) / np.maximum(sd, 1e-6), -clip, clip).astype(X.dtype)
 
 
 def variant_of(key):
@@ -96,6 +111,8 @@ def _build(cls_name, repo, names, sfreq, n_times, how):
     import braindecode.models as M
     from huggingface_hub import hf_hub_download
 
+    if cls_name == "REVE":  # its position bank, prefetched by scripts/00_download_pretrained.sh
+        os.environ.setdefault("REVE_POSITIONS_PATH", str(REVE_POSITIONS))
     kw = dict(n_outputs=2, n_chans=len(names), n_times=n_times, chs_info=_chs_info(names, sfreq), sfreq=sfreq)
     cls = getattr(M, cls_name)
     if how == "hub":
@@ -124,6 +141,7 @@ def load_weights(model, path):
     - LaBraM: its time embedding has one row per 1 s patch of its 15 s pretraining window;
       the first rows are used for shorter windows, as the original code does.
     - EEGPT: `chans_id` is a table of channel indices, not weights; ours is kept.
+    - REVE: `cls_query_token` serves attention pooling only, which we do not use.
     - The classification head is never loaded (we use features only).
     """
     from safetensors.torch import load_file
@@ -140,7 +158,8 @@ def load_weights(model, path):
 
 
 class Foundation(nn.Module):
-    """A foundation model fed the dataset's windows (batch, n_chans, n_times) in microvolts."""
+    """A foundation model fed the dataset's windows (batch, n_chans, n_times) in microvolts
+    (REVE: already z-scored per recording by `zscore_recording`)."""
 
     def __init__(self, key, ch_names, n_times):
         super().__init__()
@@ -160,6 +179,8 @@ class Foundation(nn.Module):
         self.n_chans = len(want)
         self.tokens = TOKENS.get(key)
         self.model = _build(cls_name, repo, want, sfreq, n_times, how)
+        if cls_name == "REVE" and len(self.model.default_pos) != self.n_chans:  # it only warns
+            raise ValueError(f"{key}: REVE's position bank lacks some of {want}")
         self.fwd = {"ch_names": want} if cls_name == "Labram" else {}
 
     def forward(self, x):

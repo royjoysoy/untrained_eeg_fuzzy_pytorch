@@ -167,7 +167,8 @@ def build_model(name, n_chans, n_times, seed):
 
 @torch.no_grad()
 def embed(model, X, batch_size=512):
-    """Features for every window: (n_windows, n_features) as float64."""
-    out = [model(torch.from_numpy(X[i : i + batch_size])).flatten(1)
+    """Features for every window: (n_windows, n_features) as float64, on the model's device."""
+    device = next(model.parameters(), torch.empty(0)).device
+    out = [model(torch.from_numpy(X[i : i + batch_size]).to(device)).flatten(1).cpu()
            for i in range(0, len(X), batch_size)]
     return torch.cat(out).double().numpy()

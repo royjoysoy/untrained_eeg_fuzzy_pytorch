@@ -41,3 +41,8 @@ channels: [Fp1, AF3, F7, F3, FC1, FC5, T7, C3, CP1, CP5, P7, P3, Pz, PO3, O1, Oz
 # Task: participant id prefix (pd = Parkinson's, hc = control). Label 1 = patient.
 tasks:
   pd_vs_control: {column: group, positive: [pd], negative: [hc]}
+
+# Leakage: REVE was pretrained on this dataset (its paper, appendix B).
+exclude:
+  reason: pretrained on this dataset (leakage)
+  extractors: [reve_base, reve_large]
