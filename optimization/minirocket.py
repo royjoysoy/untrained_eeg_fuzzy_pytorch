@@ -93,7 +93,7 @@ def run_task(B, task, labels, cfg, seed, n_jobs, max_fit_windows):
         F = block_means(model, B, used)
         feats = np.zeros((n_blocks, F.shape[1]), np.float32)
         feats[used] = F
-        X, y2, _, _ = task_data(feats.astype(np.float64), B.cond, B.pid, task, labels)
+        X, y2, _, _ = task_data(feats, B.cond, B.pid, task, labels)
         assert np.array_equal(y2, y)
         prob[te] = estimator().fit(X[tr], y[tr]).predict_proba(X[te])
     return _finish(y, prob, task), F.shape[1], len(y)

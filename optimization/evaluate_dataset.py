@@ -32,8 +32,10 @@ from untrained_eeg.tasks import task_data, task_labels, task_names  # noqa: E402
 
 
 def load(path):
+    """Features exactly as phase1_probe.py reads them: float32, as stored (no cast to
+    float64, which moves probabilities by ~1e-5 and can swap near-tied AUC pairs)."""
     with np.load(path, allow_pickle=False) as f:
-        return dict(feats=f["feats"].astype(np.float64), cond=f["cond"], pid=f["participant_id"],
+        return dict(feats=f["feats"], cond=f["cond"], pid=f["participant_id"],
                     meta=json.loads(str(f["meta"])))
 
 

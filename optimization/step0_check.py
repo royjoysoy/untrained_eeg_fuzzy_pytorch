@@ -35,7 +35,7 @@ def metrics(path, cfg, labels, tasks):
     f = np.load(path)
     out = {}
     for t in tasks:
-        X, y, g, _ = task_data(f["feats"].astype(np.float64), f["cond"], f["participant_id"], t, labels)
+        X, y, g, _ = task_data(f["feats"], f["cond"], f["participant_id"], t, labels)
         _, auc, bacc = c1(X, y, g, t, cfg)
         out[t] = (auc, bacc)
     return out

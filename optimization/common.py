@@ -4,7 +4,8 @@ Everything here reuses Yohan's phase-1 code (src/untrained_eeg) so the optimizat
 results are directly comparable with results/phase1/<dataset>/metrics.csv:
   * windows from the "standard" cache (60 s blocks -> 2 s windows at 128 Hz, etc.),
   * one feature vector per block = mean of its windows' features (phase1_features.block_features),
-  * labels and samples per task from untrained_eeg.tasks.task_data.
+  * labels and samples per task from untrained_eeg.tasks.task_data, on float32 features as
+    stored (phase1_probe.py does not cast; casting changes the probe in the 5th decimal).
 
 Paths: --data-root points to a folder with cache/ and raw/ (e.g. the shared
 /project/rrg-glatard/shared/untrained_eeg/data). Its raw/<dataset> becomes the
