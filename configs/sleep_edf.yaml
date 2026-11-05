@@ -1,0 +1,49 @@
+# Sleep-EDF Expanded, sleep cassette study (PhysioNet): 153 nights of 78 healthy adults,
+# 2 EEG channels (Fpz-Cz, Pz-Oz) at 100 Hz, hypnograms in 30 s epochs. Task 8: sleep
+# staging, 5 classes (W, N1, N2, N3 = stages 3 and 4, REM). https://physionet.org/content/sleep-edfx/1.0.0/
+# Downloaded from PhysioNet's open-data mirror on AWS (8x faster here than physionet.org).
+
+# Leave as null to use data/raw/sleep_edf in the repo, downloaded automatically the first time.
+data_dir: null
+data_env: UNTRAINED_EEG_SLEEP_EDF
+openneuro:  # not OpenNeuro: PhysioNet's public S3 bucket
+  id: sleep_edf
+  bucket: "https://physionet-open.s3.amazonaws.com"
+  prefix: sleep-edfx/1.0.0
+  include: ["sleep-cassette/*-PSG.edf", "sleep-cassette/*-Hypnogram.edf", "SC-subjects.xls"]
+
+cache_dir: data/cache/sleep_edf
+results_dir: results
+
+# --- Recordings and preprocessing ----------------------------------------
+# The first 20 of the 78 subjects (both nights where there are two), at most 30 epochs per
+# stage and night: about 5,000 epochs of 30 s.
+loader: sleep
+participants: [sub-00, sub-01, sub-02, sub-03, sub-04, sub-05, sub-06, sub-07, sub-08, sub-09,
+               sub-10, sub-11, sub-12, sub-13, sub-14, sub-15, sub-16, sub-17, sub-18, sub-19]
+channels: [EEG Fpz-Cz, EEG Pz-Oz]
+reference: none     # already bipolar derivations
+l_freq: 0.5         # keeps the slow waves of deep sleep
+h_freq: 40.0
+sfreq: 100          # the recordings' own rate
+window_s: 30        # one window = one scored epoch
+segment_s: 30
+wake_margin_min: 30
+max_per_class: 30
+max_windows: null
+
+# --- Task and probe ------------------------------------------------------
+# 5 classes, one sample per epoch, folds grouped by subject (no subject in both training
+# and test). Metrics: macro one-vs-rest AUC and balanced accuracy.
+tasks:
+  sleep_stage: {level: epoch, classes: [W, N1, N2, N3, REM]}
+cv_folds: 5
+cv_seed: 0
+cv_split_seeds: 10        # CV-split variability over 10 splits (5-class probes are slow)
+ensemble_features: false  # phase 2: averaged predictions and votes only, no feature averaging
+n_permutations: 200       # permutation test: fewer refits (each 5-class probe takes minutes)
+
+# Bipolar derivations have no electrode positions: no foundation model and no EEGNetv4
+# (C3, Cz, C4) here.
+exclude:
+  extractors: [eegpt, labram, bendr, cbramod, codebrain, eegdino_small, eegdino_medium, signal_jepa]

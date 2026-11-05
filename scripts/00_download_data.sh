@@ -1,25 +1,29 @@
 #!/bin/bash
-# Download OpenNeuro ds003478 v1.1.0 (resting EEG, depression; ~10 GB, no account needed).
+# Download a dataset of the project (no account needed), on the login node: compute nodes
+# have no internet.
 #
-#   bash scripts/00_download_data.sh /path/to/ds003478
-#   export UNTRAINED_EEG_DATA=/path/to/ds003478
+#   bash scripts/00_download_data.sh ds004504              # into data/raw/ds004504
+#   bash scripts/00_download_data.sh ds003478 /shared/dir  # a shared copy elsewhere, then
+#   export UNTRAINED_EEG_DATA=/shared/dir                   # point the scripts to it
+#   (one variable per dataset: data_env in its config, e.g. UNTRAINED_EEG_DS004504)
 #
-# Needs the AWS CLI (pip install awscli). On Rorqual, please download once to a
-# shared /project folder instead of everyone keeping their own copy (docs/rorqual.md).
+# Datasets: the configs (ds003478, run-01, 8.2 GB; ds004504, raw, 2.8 GB; ds002778, 0.57 GB;
+# lemon; bnci2014_001; sleep_edf); the files to fetch are in configs/<dataset>.yaml. The scripts also download data/raw/<dataset>
+# themselves when it is missing. On Rorqual, keep one shared copy in /project (docs/rorqual.md).
+# Interrupted? Run it again: files already downloaded are skipped.
 set -euo pipefail
+DATASET=${1:?usage: bash scripts/00_download_data.sh <config name, e.g. ds004504> [destination]}
+cd "$(dirname "$0")/.."
+python3 - "$DATASET" "${2:-}" <<'EOF'
+import sys
+sys.path.insert(0, "src")
+from untrained_eeg.data import REPO, _data_dir, download, load_config
 
-DEST=${1:?usage: bash scripts/00_download_data.sh /path/to/ds003478}
-VERSION=1.1.0
-
-aws s3 sync --no-sign-request s3://openneuro.org/ds003478 "$DEST"
-
-# S3 always serves the latest snapshot. Check that it is still v1.1.0; if not,
-# get the exact version with DataLad instead:
-#   datalad install https://github.com/OpenNeuroDatasets/ds003478.git && cd ds003478
-#   git checkout 1.1.0 && datalad get .
-latest=$(head -1 "$DEST/CHANGES" | cut -d' ' -f1)
-[ "$latest" = "$VERSION" ] || echo "WARNING: downloaded v$latest, the project uses v$VERSION (see comment above)"
-n_set=$(find "$DEST" -name '*.set' | wc -l)
-n_fdt=$(find "$DEST" -name '*.fdt' | wc -l)
-echo "found $n_set .set and $n_fdt .fdt files (expected 243 and 243)"
-echo "now run: export UNTRAINED_EEG_DATA=$DEST"
+dataset, dest = sys.argv[1], sys.argv[2]
+cfg = load_config(REPO / "configs" / f"{dataset}.yaml")
+if dest:  # a copy elsewhere, e.g. shared
+    download(cfg, dest)
+else:  # data/raw/<dataset>, with the marker that tells the scripts it is complete
+    cfg["data_dir"] = None
+    print(_data_dir(cfg))
+EOF

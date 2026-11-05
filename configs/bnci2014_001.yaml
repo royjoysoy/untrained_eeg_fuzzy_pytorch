@@ -1,0 +1,67 @@
+# BNCI 2014-001 = BCI Competition IV dataset 2a (MOABB BNCI2014_001): 9 subjects, 2 sessions
+# of 288 motor-imagery trials (left hand, right hand, feet, tongue), 22 EEG + 3 EOG channels at
+# 250 Hz. Task 7: left vs right hand. http://bnci-horizon-2020.eu/database/data-sets
+# Leakage: EEGNetv4's BNCI2014001 checkpoint and both pretrained ShallowFBCSPNet checkpoints
+# were trained on it, so they are left out of this task.
+
+# Leave as null to use data/raw/bnci2014_001 in the repo, downloaded automatically the first time.
+data_dir: null
+data_env: UNTRAINED_EEG_BNCI2014_001
+openneuro:  # not OpenNeuro: the BNCI server (TU Graz)
+  id: bnci2014_001
+  urls:
+    A01E.mat: https://lampx.tugraz.at/~bci/database/001-2014/A01E.mat
+    A01T.mat: https://lampx.tugraz.at/~bci/database/001-2014/A01T.mat
+    A02E.mat: https://lampx.tugraz.at/~bci/database/001-2014/A02E.mat
+    A02T.mat: https://lampx.tugraz.at/~bci/database/001-2014/A02T.mat
+    A03E.mat: https://lampx.tugraz.at/~bci/database/001-2014/A03E.mat
+    A03T.mat: https://lampx.tugraz.at/~bci/database/001-2014/A03T.mat
+    A04E.mat: https://lampx.tugraz.at/~bci/database/001-2014/A04E.mat
+    A04T.mat: https://lampx.tugraz.at/~bci/database/001-2014/A04T.mat
+    A05E.mat: https://lampx.tugraz.at/~bci/database/001-2014/A05E.mat
+    A05T.mat: https://lampx.tugraz.at/~bci/database/001-2014/A05T.mat
+    A06E.mat: https://lampx.tugraz.at/~bci/database/001-2014/A06E.mat
+    A06T.mat: https://lampx.tugraz.at/~bci/database/001-2014/A06T.mat
+    A07E.mat: https://lampx.tugraz.at/~bci/database/001-2014/A07E.mat
+    A07T.mat: https://lampx.tugraz.at/~bci/database/001-2014/A07T.mat
+    A08E.mat: https://lampx.tugraz.at/~bci/database/001-2014/A08E.mat
+    A08T.mat: https://lampx.tugraz.at/~bci/database/001-2014/A08T.mat
+    A09E.mat: https://lampx.tugraz.at/~bci/database/001-2014/A09E.mat
+    A09T.mat: https://lampx.tugraz.at/~bci/database/001-2014/A09T.mat
+
+cache_dir: data/cache/bnci2014_001
+results_dir: results
+
+# --- Recordings and preprocessing ----------------------------------------
+loader: bnci
+participants: [A01, A02, A03, A04, A05, A06, A07, A08, A09]
+all_channels: [Fz, FC3, FC1, FCz, FC2, FC4, C5, C3, C1, Cz, C2, C4, C6, CP3, CP1, CPz, CP2, CP4,
+               P1, Pz, P2, POz, EOG1, EOG2, EOG3]  # the order of the .mat files
+channels: [Fz, FC3, FC1, FCz, FC2, FC4, C5, C3, C1, Cz, C2, C4, C6, CP3, CP1, CPz, CP2, CP4,
+           P1, Pz, P2, POz]
+l_freq: 1.0
+h_freq: 40.0
+sfreq: 128
+trial_window: [2, 6]  # seconds after the trial start: cue at 2 s, imagery until 6 s
+window_s: 2
+segment_s: 4          # one trial = 2 windows, averaged into one sample
+max_windows: null
+preprocessing:
+  bcic2a:  # the pretrained ShallowFBCSPNet's input (here the dataset's own channels)
+    l_freq: 4.0
+    h_freq: 38.0
+    sfreq: 250
+    ems: {factor_new: 0.001, init_block_size: 1000}
+
+# --- Task and probe ------------------------------------------------------
+# Trial level, within subject: each subject's trials (both sessions) get their own
+# stratified 5-fold CV, as is usual for this dataset; AUC over all subjects' trials.
+tasks:
+  mi_left_right: {level: trial}
+cv_folds: 5
+cv_seed: 0
+
+# Leakage: models trained on this dataset are left out.
+exclude:
+  extractors: [shallow_pretrained]
+  eegnetv4: [BNCI2014001]

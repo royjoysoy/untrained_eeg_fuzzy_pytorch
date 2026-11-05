@@ -32,10 +32,13 @@ Please don't download your own copy if a shared one exists.
 ```bash
 # TODO(Roy): shared copy in the group /project space, e.g.
 export UNTRAINED_EEG_DATA=/project/<allocation>/shared/ds003478
+export UNTRAINED_EEG_DS004504=/project/<allocation>/shared/ds004504
+export UNTRAINED_EEG_DS002778=/project/<allocation>/shared/ds002778
 ```
 
-Add that line to your `~/.bashrc` so you don't have to repeat it.
-If there is no shared copy yet: `bash scripts/00_download_data.sh <folder>`.
+Add those lines to your `~/.bashrc` so you don't have to repeat them.
+If there is no shared copy yet: `bash scripts/00_download_data.sh <dataset> <folder>`.
+Download on a login node (compute nodes have no internet).
 
 ## 4. Run the steps as jobs
 
