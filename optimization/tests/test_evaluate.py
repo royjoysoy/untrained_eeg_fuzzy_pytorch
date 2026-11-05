@@ -53,3 +53,18 @@ def test_riemann_runs():
     y = np.r_[np.zeros(30, int), np.ones(30, int)]
     p, auc, bacc = generic(X, y, np.arange(n), "bdi_closed", CFG, spd_blocks=[[0, k]])
     assert 0 <= auc <= 1
+
+
+def test_nonfinite_imputed_in_fold():
+    rng = np.random.default_rng(3)
+    X, y, g = data("bdi_closed", rng)
+    X[3, 5] = np.nan; X[10, 2] = np.inf; X[:, 7] = np.nan  # one feature empty everywhere
+    p, auc, bacc = generic(X, y, g, "bdi_closed", CFG)
+    assert np.isfinite(p).all() and 0 <= auc <= 1
+    p2, auc2, _, chosen = nested({"a": (X, ()), "b": (np.nan_to_num(X), ())}, y, g, "bdi_closed", CFG)
+    assert np.isfinite(p2).all()
+
+
+def test_finite_path_unchanged():
+    X, y, g = data("bdi_closed", np.random.default_rng(0))
+    assert np.array_equal(generic(X, y, g, "bdi_closed", CFG)[0], c1(X, y, g, "bdi_closed", CFG)[0])

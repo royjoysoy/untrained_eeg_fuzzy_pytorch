@@ -5,6 +5,9 @@
 * `generic` : the same outer splits (tasks._outer_splits) and the same scoring, with any
               sklearn estimator; used for the Riemannian tangent space, which is fitted
               inside each training fold. With the c1 pipeline it equals `c1` (tested).
+* non-finite feature values (e.g. Hjorth mobility of a flat channel, 0/0) are set to NaN
+  and imputed with the TRAINING-fold median of that feature (SimpleImputer in the pipeline);
+  feature sets without them go through exactly the c1 pipeline.
 * `nested`  : selection among candidate feature sets inside each outer training set
               (inner splits of the same kind as the outer ones, as in tasks.py's nested C);
               outer test samples only score the selected candidate.
@@ -14,6 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import balanced_accuracy_score
 from sklearn.pipeline import make_pipeline
@@ -55,10 +59,22 @@ class RiemannTangent(BaseEstimator, TransformerMixin):
         return np.hstack([X[:, keep]] + parts)
 
 
-def estimator(spd_blocks=()):
-    """The c1 probe (standardize + LogisticRegression(max_iter=5000)), tangent space first if needed."""
-    steps = [RiemannTangent(tuple(map(tuple, spd_blocks)))] if spd_blocks else []
+def estimator(spd_blocks=(), impute=False):
+    """The c1 probe (standardize + LogisticRegression(max_iter=5000)); training-fold median
+    imputation first if the features have non-finite values, then the tangent space if needed."""
+    steps = [SimpleImputer(strategy="median", keep_empty_features=True)] if impute else []
+    steps += [RiemannTangent(tuple(map(tuple, spd_blocks)))] if spd_blocks else []
     return make_pipeline(*steps, StandardScaler(), LogisticRegression(max_iter=5000))
+
+
+def finite_or_nan(X):
+    """(X with inf -> NaN, whether imputation is needed)."""
+    bad = ~np.isfinite(X)
+    if not bad.any():
+        return X, False
+    X = X.astype(np.float64, copy=True)
+    X[bad] = np.nan
+    return X, True
 
 
 def _proba(est, X, y, tr, te):
@@ -73,19 +89,21 @@ def _finish(y, prob, task):
 
 
 def generic(X, y, groups, task, cfg, spd_blocks=()):
+    X, imp = finite_or_nan(X)
     n_cls = len(np.unique(y))
     prob = np.zeros((len(y), n_cls))
     for tr, te in _outer_splits(X, y, groups, task, cfg["cv_seed"], cfg["cv_folds"]):
-        prob[te] = _proba(estimator(spd_blocks), X, y, tr, te)
+        prob[te] = _proba(estimator(spd_blocks, imp), X, y, tr, te)
     return _finish(y, prob, task)
 
 
 def _inner_score(X, y, groups, task, cfg, spd_blocks):
+    X, imp = finite_or_nan(X)
     n_cls = len(np.unique(y))
     prob = np.zeros((len(y), n_cls))
     kind = "" if task in WITHIN_SUBJECT else task
     for tr, te in _outer_splits(X, y, groups, kind, cfg["cv_seed"], cfg["cv_folds"]):
-        prob[te] = _proba(estimator(spd_blocks), X, y, tr, te)
+        prob[te] = _proba(estimator(spd_blocks, imp), X, y, tr, te)
     return auc_score(y, prob if task in MULTICLASS else prob[:, 1])
 
 
@@ -100,6 +118,7 @@ def nested(cands: dict, y, groups, task, cfg):
         best = names[int(np.argmax(scores))]
         chosen.append(best)
         X, spd = cands[best]
-        prob[te] = _proba(estimator(spd), X, y, tr, te)
+        X, imp = finite_or_nan(X)
+        prob[te] = _proba(estimator(spd, imp), X, y, tr, te)
     p, auc, bacc = _finish(y, prob, task)
     return p, auc, bacc, chosen

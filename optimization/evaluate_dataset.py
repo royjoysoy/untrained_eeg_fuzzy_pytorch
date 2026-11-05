@@ -48,9 +48,10 @@ def eval_file(path, cfg, labels, tasks, dataset):
     for task in tasks:
         t0 = time.time()
         X, y, groups, _ = task_data(d["feats"], d["cond"], d["pid"], task, labels)
-        if m.get("spd_blocks"):
-            _, auc, bacc = generic(X, y, groups, task, cfg, m["spd_blocks"])
-        else:
+        nonfinite = int((~np.isfinite(X)).sum())
+        if m.get("spd_blocks") or nonfinite:  # tangent space and/or in-fold imputation
+            _, auc, bacc = generic(X, y, groups, task, cfg, m.get("spd_blocks", ()))
+        else:  # exactly the phase-1 probe
             _, auc, bacc = c1(X, y, groups, task, cfg)
         rows.append(dict(dataset=dataset, task=task, kind=m["kind"], factor=m.get("factor", "handcrafted"),
                          value=m.get("value", m["config"]), config=m["config"], seed=m.get("seed", np.nan),
@@ -58,7 +59,9 @@ def eval_file(path, cfg, labels, tasks, dataset):
                          receptive_field_s=m.get("receptive_field_s", np.nan),
                          extract_seconds=m.get("extract_seconds", m.get("extract_seconds_all_families", np.nan)),
                          n_windows=m.get("n_windows", np.nan), n_params=m.get("n_params", np.nan),
-                         probe_seconds=time.time() - t0))
+                         probe_seconds=time.time() - t0, nonfinite_values=nonfinite,
+                         nonfinite_features=int((~np.isfinite(X)).any(axis=0).sum()),
+                         nonfinite_samples=int((~np.isfinite(X)).any(axis=1).sum())))
     return rows
 
 
