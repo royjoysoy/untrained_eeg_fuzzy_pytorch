@@ -2,7 +2,8 @@
 
 Goal: find out which architecture and initialization choices make the frozen random-weight
 `cnn1d` better or worse, on every phase-1 task, against handcrafted EEG features and the
-phase-1 references (ShallowFBCSPNet, scattering, foundation models). Status: code tested on
+phase-1 references (ShallowFBCSPNet, scattering, foundation models) and MiniRocket
+(random convolution kernels, the standard time-series baseline). Status: code tested on
 synthetic data; no real-data results yet.
 
 ## What stays fixed (ground rules)
@@ -17,7 +18,7 @@ synthetic data; no real-data results yet.
 - Selection only inside training folds: (a) `nested` per task; (b) leave-one-dataset-out
   (`summarize.py`): a config is chosen on the other datasets' tasks, then reported on the
   held-out one. Descriptive per-config numbers (`results.csv`) are never the headline.
-- Riemannian tangent space fitted inside training folds only.
+- Riemannian tangent space and MiniRocket's biases fitted inside training folds only.
 - Outputs under `results/optimization/<M-D-YY>/` in your own clone; writers never overwrite.
 
 ## Ablation factors (from `cnn1d`: conv k=25, 32 filters -> ELU -> pool 4 -> conv k=11, 64 -> ELU -> mean)
@@ -41,7 +42,7 @@ can matter here, unlike in `uncnn1d`.
 module load python/3.12 scipy-stack
 virtualenv --no-download $HOME/venv/uneeg_opt && source $HOME/venv/uneeg_opt/bin/activate
 pip install --no-index torch scikit-learn pandas pyyaml joblib matplotlib
-pip install pyriemann fooof       # login node (needs internet)
+pip install pyriemann fooof aeon  # login node (needs internet)
 python -m pytest -q optimization/tests
 ```
 
@@ -73,4 +74,5 @@ python optimization/random_search.py --space space.json --n 12 --out $OUT/search
 | `evaluate_dataset.py` | `per_seed.csv`, `nested.csv` per dataset |
 | `summarize.py` | `results.csv`, `lodo.csv`, `nested.csv`, `references.csv`, `headline.csv` |
 | `report.py` | one figure per factor (all tasks, seed spread, reference lines) |
+| `minirocket.py` | MiniRocket baseline (aeon): biases fitted on training windows of each outer split, same blocks, splits and probe; 10 seeds |
 | `step0_check.py`, `benchmark.py`, `random_search.py`, `slurm/run_optimization.sh` | as named |

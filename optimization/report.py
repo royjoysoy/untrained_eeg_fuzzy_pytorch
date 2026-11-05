@@ -6,7 +6,7 @@
 Reads <out>/summary/ (summarize.py) and the per-seed rows. Each panel is one task;
 dots are weight seeds, the black bar is their mean. Reference lines (same probe, folds):
 phase-1 ShallowFBCSPNet and scattering (mean over instances), the best phase-1
-foundation model, and the best single handcrafted family (descriptive).
+foundation model, the best single handcrafted family (descriptive) and MiniRocket.
 Writes <out>/summary/figures/<factor>.png.
 """
 
@@ -25,7 +25,8 @@ CNN = "#2a78d6"
 REFS = [("phase1_shallow", "untrained ShallowFBCSPNet (phase 1)", "#eb6834", "-"),
         ("phase1_scattering", "wavelet scattering (phase 1)", INK2, "--"),
         ("phase1_best_foundation", "best foundation model (phase 1)", "#6250d6", "-."),
-        ("handcrafted_best_descriptive", "best handcrafted family", "#1baf7a", ":")]
+        ("handcrafted_best_descriptive", "best handcrafted family", "#1baf7a", ":"),
+        ("minirocket", "MiniRocket (mean over seeds)", "#eda100", (0, (5, 2, 1, 2)))]
 
 
 def main():
@@ -74,7 +75,7 @@ def main():
             ax.set_ylabel("ROC-AUC", fontsize=8, color=INK2)
         n = cnn[cnn.config == "default"].seed.nunique()
         fig.suptitle(f"{factor}: dots = weight seeds (n = {n}), bar = mean", fontsize=10, color=INK)
-        fig.legend(handles.values(), handles.keys(), loc="lower center", ncol=4, frameon=False, fontsize=8)
+        fig.legend(handles.values(), handles.keys(), loc="lower center", ncol=3, frameon=False, fontsize=8)
         fig.tight_layout(rect=(0, 0.05, 1, 0.97))
         fig.savefig(figdir / f"{factor}.png", dpi=200)
         plt.close(fig)

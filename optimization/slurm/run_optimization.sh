@@ -7,8 +7,9 @@
 #   export DATASETS="ds003478 ds002778 ds003490 ds004504 lemon sleep_edf bnci2014_001"
 #   bash optimization/slurm/run_optimization.sh
 #
-# Per dataset: 1 handcrafted job (8 CPUs) + an array over grid configs (1 CPU, all seeds),
-# then 1 evaluation job (nested CV, 16 CPUs). Finally summarize + figures.
+# Per dataset: 1 handcrafted job (8 CPUs) + an array over grid configs (1 CPU, all seeds)
+# + 1 MiniRocket job (8 CPUs, 10 seeds, fitted inside training folds), then 1 evaluation
+# job (nested CV, 16 CPUs). Finally summarize + figures.
 set -euo pipefail
 : "${S:?}" "${OUT:?}" "${VENV:?}"
 ACCOUNT=${ACCOUNT:-rrg-glatard_cpu}
@@ -27,10 +28,13 @@ for ds in $DATASETS; do
   c=$(sbatch --parsable --account=$ACCOUNT --job-name=opt-cnn-$ds --array=0-$((N_CFG-1)) \
       --cpus-per-task=1 --mem=$mem --time=06:00:00 --output=logs/opt-cnn-$ds-%A_%a.log \
       --wrap="$PY optimization/extract.py cnn $common --grid-index \$SLURM_ARRAY_TASK_ID --seeds $SEEDS")
+  r=$(sbatch --parsable --account=$ACCOUNT --job-name=opt-mrocket-$ds --cpus-per-task=8 --mem=$mem \
+      --time=12:00:00 --output=logs/opt-mrocket-$ds-%j.log \
+      --wrap="$PY optimization/minirocket.py $common --seeds 0-9 --jobs 8")
   e=$(sbatch --parsable --account=$ACCOUNT --job-name=opt-eval-$ds --dependency=afterok:$h:$c \
       --cpus-per-task=16 --mem=32G --time=12:00:00 --output=logs/opt-eval-$ds-%j.log \
       --wrap="$PY optimization/evaluate_dataset.py $common --nested --jobs 16")
-  evals+=("$e"); echo "$ds: handcrafted=$h cnn=$c eval=$e"
+  evals+=("$e" "$r"); echo "$ds: handcrafted=$h cnn=$c eval=$e minirocket=$r"
 done
 dep=$(IFS=:; echo "${evals[*]}")
 sbatch --account=$ACCOUNT --job-name=opt-summary --dependency=afterok:$dep --cpus-per-task=1 --mem=8G \

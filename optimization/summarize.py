@@ -16,7 +16,7 @@ Reads <out>/<dataset>/per_seed.csv and nested.csv. Writes in <out>/summary/:
   references.csv  phase-1 extractors on the same tasks (same probe, folds and instances):
                   cnn1d, shallow, eegnet, scattering, best foundation model.
   headline.csv    per task: current cnn1d, nested and LODO untrained CNN, best handcrafted
-                  (nested and LODO), phase-1 references.
+                  (nested and LODO), MiniRocket (mean over its seeds), phase-1 references.
 """
 
 import argparse
@@ -75,7 +75,8 @@ def main():
     dest = a.out / "summary"
     if dest.exists():
         raise FileExistsError(dest)
-    per_seed = pd.concat([pd.read_csv(f) for f in sorted(a.out.glob("*/per_seed.csv"))], ignore_index=True)
+    files = sorted(a.out.glob("*/per_seed.csv")) + sorted(a.out.glob("*/minirocket.csv"))
+    per_seed = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
     nfiles = sorted(a.out.glob("*/nested.csv"))
     dest.mkdir(parents=True)
 
@@ -117,6 +118,8 @@ def main():
             sel = lo[(lo.dataset == ds) & (lo.task == task) & (lo.kind == kind)] if len(lo) else lo
             row[kind] = sel.auc_mean.iloc[0] if len(sel) else np.nan
             row[kind + "_config"] = sel.chosen.iloc[0] if len(sel) else ""
+        mr = res[(res.kind == "minirocket") & (res.dataset == ds) & (res.task == task)]
+        row["minirocket"] = mr.auc_mean.iloc[0] if len(mr) else np.nan
         h = hand[(hand.dataset == ds) & (hand.task == task)]
         if len(h):
             row["handcrafted_best_descriptive"] = h.auc_mean.max()
