@@ -42,8 +42,13 @@ can matter here, unlike in `uncnn1d`.
 module load python/3.12 scipy-stack
 virtualenv --no-download $HOME/venv/uneeg_opt && source $HOME/venv/uneeg_opt/bin/activate
 pip install --no-index torch scikit-learn pandas pyyaml joblib matplotlib
-pip install pyriemann fooof aeon  # login node (needs internet)
+pip install pyriemann fooof "scipy==1.17.1"   # login node (needs internet); scipy as in phase 1
 python -m pytest -q optimization/tests
+# MiniRocket in its own environment: aeon pulls numba, which pins an older numpy, and the
+# main environment must keep phase 1's numpy 2.4.2 (the probe must reproduce phase 1 exactly)
+deactivate
+virtualenv --no-download $HOME/venv/uneeg_mr && source $HOME/venv/uneeg_mr/bin/activate
+pip install --no-index torch scikit-learn pandas pyyaml joblib && pip install aeon "scipy==1.17.1"
 ```
 
 ## Run order
@@ -57,7 +62,7 @@ python optimization/step0_check.py --dataset ds003478 --data-root $S/data --phas
 # runtime estimate (interactive job)
 python optimization/benchmark.py --data-root $S/data
 # Steps 1-3 (after approval)
-S=$S OUT=$OUT VENV=$HOME/venv/uneeg_opt bash optimization/slurm/run_optimization.sh
+S=$S OUT=$OUT VENV=$HOME/venv/uneeg_opt VENV_MR=$HOME/venv/uneeg_mr bash optimization/slurm/run_optimization.sh
 # random search over the 2-3 strongest factors, then extract + evaluate with --search-list
 python optimization/random_search.py --space space.json --n 12 --out $OUT/search_configs.txt
 ```

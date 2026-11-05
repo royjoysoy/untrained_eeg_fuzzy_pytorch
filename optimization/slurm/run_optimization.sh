@@ -4,6 +4,7 @@
 #   export S=/project/rrg-glatard/shared/untrained_eeg
 #   export OUT=$PWD/results/optimization/11-5-26          # your clone, not the shared folder
 #   export VENV=$HOME/venv/uneeg_opt                        # see optimization/README.md
+#   export VENV_MR=$HOME/venv/uneeg_mr                      # MiniRocket only (aeon pins an older numpy)
 #   export DATASETS="ds003478 ds002778 ds003490 ds004504 lemon sleep_edf bnci2014_001"
 #   bash optimization/slurm/run_optimization.sh
 #
@@ -16,6 +17,9 @@ ACCOUNT=${ACCOUNT:-rrg-glatard_cpu}
 SEEDS=${SEEDS:-0-29}
 DATASETS=${DATASETS:-"ds003478 ds002778 ds003490 ds004504 lemon sleep_edf bnci2014_001"}
 PY="source $VENV/bin/activate && python"
+PY_MR="source ${VENV_MR:-$VENV}/bin/activate && python"
+# the main environment must match phase 1 (numpy 2.4.2, scipy 1.17.1, scikit-learn 1.8.0, torch 2.14.1)
+bash -c "$PY -c 'import numpy,scipy,sklearn,torch;v=(numpy.__version__,scipy.__version__,sklearn.__version__,torch.__version__);print(\"main env:\",v);assert v[0].startswith(\"2.4.2\") and v[1].startswith(\"1.17.1\") and v[2].startswith(\"1.8.0\") and v[3].startswith(\"2.14.1\"),\"versions differ from phase 1\"'"
 mkdir -p logs "$OUT"
 [ -e "$OUT/job_ids.txt" ] && { echo "$OUT/job_ids.txt exists: use a new OUT"; exit 1; }
 log() { echo "$1 $2 $3" >> "$OUT/job_ids.txt"; }   # stage dataset job-id, for compute_cost.py
@@ -32,7 +36,7 @@ for ds in $DATASETS; do
       --wrap="$PY optimization/extract.py cnn $common --grid-index \$SLURM_ARRAY_TASK_ID --seeds $SEEDS")
   r=$(sbatch --parsable --account=$ACCOUNT --job-name=opt-mrocket-$ds --cpus-per-task=8 --mem=$mem \
       --time=12:00:00 --output=logs/opt-mrocket-$ds-%j.log \
-      --wrap="$PY optimization/minirocket.py $common --seeds 0-9 --jobs 8")
+      --wrap="$PY_MR optimization/minirocket.py $common --seeds 0-9 --jobs 8")
   e=$(sbatch --parsable --account=$ACCOUNT --job-name=opt-eval-$ds --dependency=afterok:$h:$c \
       --cpus-per-task=16 --mem=32G --time=12:00:00 --output=logs/opt-eval-$ds-%j.log \
       --wrap="$PY optimization/evaluate_dataset.py $common --nested --jobs 16")
