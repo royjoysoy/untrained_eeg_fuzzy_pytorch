@@ -61,7 +61,7 @@ def test_nonfinite_imputed_in_fold():
     X[3, 5] = np.nan; X[10, 2] = np.inf; X[:, 7] = np.nan  # one feature empty everywhere
     p, auc, bacc = generic(X, y, g, "bdi_closed", CFG)
     assert np.isfinite(p).all() and 0 <= auc <= 1
-    p2, auc2, _, chosen = nested({"a": (X, ()), "b": (np.nan_to_num(X), ())}, y, g, "bdi_closed", CFG)
+    p2, auc2, _, chosen = nested({"a": (X, ()), "b": (np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0), ())}, y, g, "bdi_closed", CFG)
     assert np.isfinite(p2).all()
 
 
