@@ -7,7 +7,8 @@
 Reads <out>/<dataset>/per_seed.csv and nested.csv. Writes in <out>/summary/:
   results.csv     one row per dataset x task x config: n_seeds, AUC and balanced accuracy
                   mean / SD / min / max over weight seeds, delta AUC vs the current cnn1d,
-                  feature_dim, receptive field (s), runtime. DESCRIPTIVE: every config is
+                  feature_dim, receptive field (s), parameter count, extraction seconds per
+                  seed and per window (ms), probe seconds. DESCRIPTIVE: every config is
                   scored on the same folds, so its maximum is not an unbiased estimate.
   lodo.csv        (b) leave-one-dataset-out: for each held-out dataset, the config (and the
                   handcrafted family) with the best mean rank on the OTHER datasets' tasks,
@@ -77,13 +78,20 @@ def main():
         raise FileExistsError(dest)
     files = sorted(a.out.glob("*/per_seed.csv")) + sorted(a.out.glob("*/minirocket.csv"))
     per_seed = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    for col in ("n_params", "n_windows", "probe_seconds"):
+        if col not in per_seed:
+            per_seed[col] = np.nan
     nfiles = sorted(a.out.glob("*/nested.csv"))
     dest.mkdir(parents=True)
 
     keys = ["dataset", "task", "kind", "factor", "value", "config"]
     res = per_seed.groupby(keys, dropna=False, sort=False).agg(
         **AGG, feature_dim=("feature_dim", "first"), receptive_field_s=("receptive_field_s", "first"),
-        runtime_s_per_seed=("extract_seconds", "mean")).reset_index()
+        n_params=("n_params", "first"), n_windows=("n_windows", "first"),
+        runtime_s_per_seed=("extract_seconds", "mean"), probe_s_per_seed=("probe_seconds", "mean")).reset_index()
+    # extraction cost per window (one CPU thread unless the run_info says otherwise); the
+    # handcrafted time covers all families together, MiniRocket's covers fitting in every fold
+    res["ms_per_window"] = 1000 * res.runtime_s_per_seed / res.n_windows
     base = res[(res.kind == "cnn") & (res.config == "default")].set_index(["dataset", "task"]).auc_mean
     res["delta_auc_vs_current"] = res.apply(lambda r: r.auc_mean - base.get((r.dataset, r.task), np.nan), axis=1)
     res.to_csv(dest / "results.csv", index=False, float_format="%.4g")

@@ -18,6 +18,7 @@ Writes in <out>/<dataset>/ (never overwrites):
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -28,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from optimization.common import dataset_config  # noqa: E402
 from optimization.arch import ablation_grid  # noqa: E402
 from optimization.evaluate import c1, generic, nested  # noqa: E402
+from optimization.runinfo import run_info  # noqa: E402
 from untrained_eeg.tasks import task_data, task_labels, task_names  # noqa: E402
 
 
@@ -44,6 +46,7 @@ def eval_file(path, cfg, labels, tasks, dataset):
     m = d["meta"]
     rows = []
     for task in tasks:
+        t0 = time.time()
         X, y, groups, _ = task_data(d["feats"], d["cond"], d["pid"], task, labels)
         if m.get("spd_blocks"):
             _, auc, bacc = generic(X, y, groups, task, cfg, m["spd_blocks"])
@@ -53,7 +56,9 @@ def eval_file(path, cfg, labels, tasks, dataset):
                          value=m.get("value", m["config"]), config=m["config"], seed=m.get("seed", np.nan),
                          n=len(y), auc=auc, balanced_accuracy=bacc, feature_dim=m["feature_dim"],
                          receptive_field_s=m.get("receptive_field_s", np.nan),
-                         extract_seconds=m.get("extract_seconds", m.get("extract_seconds_all_families", np.nan))))
+                         extract_seconds=m.get("extract_seconds", m.get("extract_seconds_all_families", np.nan)),
+                         n_windows=m.get("n_windows", np.nan), n_params=m.get("n_params", np.nan),
+                         probe_seconds=time.time() - t0))
     return rows
 
 
@@ -86,6 +91,11 @@ def main():
     for f in ("per_seed.csv", "nested.csv"):
         if (root / f).exists():
             raise FileExistsError(root / f)
+    with run_info(a.out, "evaluate", a.dataset, extra=dict(nested=a.nested)):
+        _main(a, root)
+
+
+def _main(a, root):
     cfg = dataset_config(a.dataset, a.data_root)
     labels, tasks = task_labels(cfg), task_names(cfg)
 
@@ -125,6 +135,7 @@ def main():
     pick = lambda files, names: [f for f in files if f.parent.name in names]
 
     def nest(task, files, kind, seed, extra=None):
+        t0 = time.time()
         cands = {}
         for f in files:
             d = load(f)
@@ -135,7 +146,7 @@ def main():
             cands["all_combined"] = (X, extra["meta"]["spd_blocks"])
         _, auc, bacc, chosen = nested(cands, y, groups, task, cfg)
         return dict(dataset=a.dataset, task=task, kind=kind, seed=seed, n_candidates=len(cands),
-                    auc=auc, balanced_accuracy=bacc,
+                    auc=auc, balanced_accuracy=bacc, nested_seconds=time.time() - t0,
                     chosen=json.dumps(pd.Series(chosen).value_counts().to_dict()))
 
     jobs = [(t, pick(by_seed[s], grid_names), "cnn_grid", s) for t in tasks for s in seeds]

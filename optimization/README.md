@@ -62,6 +62,21 @@ S=$S OUT=$OUT VENV=$HOME/venv/uneeg_opt bash optimization/slurm/run_optimization
 python optimization/random_search.py --space space.json --n 12 --out $OUT/search_configs.txt
 ```
 
+## What gets recorded (for the manuscript)
+
+| Where | What |
+|---|---|
+| `run_info/*.json` | every script run: git commit and local changes, command, Python and package versions, CPU model, usable CPUs, threads, host, SLURM job/array ids, start, end, wall seconds, status |
+| `features/**/*.npz` (`meta`) | config, seed, feature dimension, receptive field (s), parameter count, windows, extraction seconds |
+| `<dataset>/per_seed.csv`, `nested.csv`, `minirocket.csv` | per seed and task: AUC, balanced accuracy, n, probe / nested / MiniRocket seconds, configs chosen in nested selection |
+| `summary/results.csv` | mean / SD / min / max over seeds, delta vs current cnn1d, ms per window, parameters |
+| `summary/headline.csv`, `lodo.csv`, `nested.csv`, `references.csv` | headline comparison and the selection procedures |
+| `job_ids.txt`, `summary/compute_cost.csv`, `compute_by_stage.csv` | SLURM accounting per job: state, wall time, used and allocated CPU-hours, peak memory; per stage and dataset; run soon after the jobs end |
+| `logs/` | stdout/stderr of every job |
+
+Times are on Rorqual CPUs with the threads shown in `run_info`; report hardware and threads
+with any timing.
+
 ## Files
 
 | File | Role |
@@ -75,4 +90,5 @@ python optimization/random_search.py --space space.json --n 12 --out $OUT/search
 | `summarize.py` | `results.csv`, `lodo.csv`, `nested.csv`, `references.csv`, `headline.csv` |
 | `report.py` | one figure per factor (all tasks, seed spread, reference lines) |
 | `minirocket.py` | MiniRocket baseline (aeon): biases fitted on training windows of each outer split, same blocks, splits and probe; 10 seeds |
+| `runinfo.py`, `compute_cost.py` | run records and the compute budget (sacct) |
 | `step0_check.py`, `benchmark.py`, `random_search.py`, `slurm/run_optimization.sh` | as named |

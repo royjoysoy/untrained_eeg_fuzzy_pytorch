@@ -28,6 +28,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from optimization.common import dataset_config, load_windows  # noqa: E402
 from optimization.evaluate import _finish, estimator  # noqa: E402
+from optimization.runinfo import run_info  # noqa: E402
 from untrained_eeg.tasks import MULTICLASS, WITHIN_SUBJECT, _outer_splits, task_data, task_labels, task_names  # noqa: E402
 
 BLOCK_LEVEL = set(MULTICLASS) | WITHIN_SUBJECT | {"ec_eo"}  # one sample per block, not per participant
@@ -112,6 +113,11 @@ def main():
     dest = a.out / a.dataset / "minirocket.csv"
     if dest.exists():
         raise FileExistsError(dest)
+    with run_info(a.out, "minirocket", a.dataset, extra=dict(seeds=a.seeds)):
+        _main(a, dest)
+
+
+def _main(a, dest):
     cfg = dataset_config(a.dataset, a.data_root)
     participants, windows, per_block = load_windows(cfg)
     B = Blocks(participants, windows, per_block)
@@ -124,7 +130,7 @@ def main():
             rows.append(dict(dataset=a.dataset, task=task, kind="minirocket", factor="baseline",
                              value="minirocket", config="minirocket", seed=seed, n=n, auc=auc,
                              balanced_accuracy=bacc, feature_dim=dim, receptive_field_s=np.nan,
-                             extract_seconds=time.time() - t0))
+                             extract_seconds=time.time() - t0, n_windows=len(B.W), n_jobs=a.jobs))
             print(f"{a.dataset} {task:14s} seed{seed} AUC {auc:.3f} bacc {bacc:.3f} "
                   f"({rows[-1]['extract_seconds']:.0f}s)", flush=True)
     dest.parent.mkdir(parents=True, exist_ok=True)

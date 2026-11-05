@@ -25,6 +25,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from optimization.common import block_features, dataset_config, embed, load_windows, save_features  # noqa: E402
 from optimization.arch import ArchConfig, ConfigurableCNN1d, ablation_grid, from_name, prepare_input  # noqa: E402
+from optimization.runinfo import run_info  # noqa: E402
 
 
 def seed_range(text):
@@ -35,6 +36,7 @@ def seed_range(text):
 def run_cnn(args, cfg, participants, windows, per_block):
     pids = participants["participant_id"].tolist()
     n_chans = windows[pids[0]][0].shape[1]
+    n_windows = sum((len(windows[p][0]) // per_block) * per_block for p in pids)
     if args.grid_index is not None:
         configs = [ablation_grid()[args.grid_index]]
     elif args.configs == ["grid"]:
@@ -49,15 +51,18 @@ def run_cnn(args, cfg, participants, windows, per_block):
             if out.exists():
                 continue
             if inputs is None:
+                t_in = time.time()
                 inputs = {p: prepare_input(windows[p][0], arch) for p in pids}
+                input_seconds = time.time() - t_in  # unc3 construction; ~0 for raw input
             t0 = time.time()
             model = ConfigurableCNN1d(n_chans, arch, seed=seed)
             rows = [block_features(embed(model, inputs[p]), windows[p][1], per_block) for p in pids]
             meta = dict(kind="cnn", config=arch.name(), factor=fac, value=val, seed=seed,
                         feature_dim=int(rows[0][0].shape[1]),
                         receptive_field_s=arch.receptive_field() / cfg["sfreq"],
-                        extract_seconds=time.time() - t0, torch=torch.__version__,
-                        threads=torch.get_num_threads())
+                        extract_seconds=time.time() - t0, input_seconds=input_seconds,
+                        n_windows=n_windows, n_params=sum(q.numel() for q in model.parameters()),
+                        torch=torch.__version__, threads=torch.get_num_threads())
             save_features(out, rows, pids, "untrained", meta)
             print(f"{args.dataset} {arch.name():40s} seed{seed:03d} {meta['feature_dim']:6d} feats "
                   f"{meta['extract_seconds']:.1f}s", flush=True)
@@ -92,7 +97,8 @@ def run_handcrafted(args, cfg, participants, windows, per_block):
             continue
         rows = [(np.stack([b[fam][0] for b in blocks]), cond) for blocks, cond in res]
         meta = dict(kind="handcrafted", config=fam, feature_dim=int(rows[0][0].shape[1]),
-                    extract_seconds_all_families=secs, n_jobs=args.jobs)
+                    extract_seconds_all_families=secs, n_jobs=args.jobs,
+                    n_windows=sum((len(windows[p][0]) // per_block) * per_block for p in pids))
         if fam.startswith("riemann"):
             n = n_ch
             k = n * (n + 1) // 2
@@ -113,9 +119,14 @@ def main():
     p.add_argument("--jobs", type=int, default=1)
     a = p.parse_args()
     torch.set_num_threads(int(os.environ.get("SLURM_CPUS_PER_TASK", 1)))
-    cfg = dataset_config(a.dataset, a.data_root)
-    participants, windows, per_block = load_windows(cfg)
-    (run_cnn if a.kind == "cnn" else run_handcrafted)(a, cfg, participants, windows, per_block)
+    with run_info(a.out, f"extract_{a.kind}", a.dataset) as rec:
+        cfg = dataset_config(a.dataset, a.data_root)
+        t0 = time.time()
+        participants, windows, per_block = load_windows(cfg)
+        rec["load_seconds"] = round(time.time() - t0, 2)
+        rec["configs"] = a.configs if a.grid_index is None else [ablation_grid()[a.grid_index][2].name()]
+        rec["seeds"] = a.seeds
+        (run_cnn if a.kind == "cnn" else run_handcrafted)(a, cfg, participants, windows, per_block)
 
 
 if __name__ == "__main__":
