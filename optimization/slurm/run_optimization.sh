@@ -1,0 +1,55 @@
+#!/bin/bash
+# Steps 1-3 on Rorqual. Submit ONLY after Roy approved the benchmark estimate.
+#
+#   export S=/project/rrg-glatard/shared/untrained_eeg
+#   export OUT=$PWD/results/optimization/11-5-26          # your clone, not the shared folder
+#   export VENV=$HOME/venv/uneeg_opt                        # see optimization/README.md
+#   export VENV_MR=$HOME/venv/uneeg_mr                      # MiniRocket only (aeon pins an older numpy)
+#   export DATASETS="ds003478 ds002778 ds003490 ds004504 lemon sleep_edf bnci2014_001"
+#   bash optimization/slurm/run_optimization.sh
+#
+# Per dataset: 1 handcrafted job (8 CPUs) + an array over grid configs (1 CPU, all seeds)
+# + 1 MiniRocket job (8 CPUs, 10 seeds, fitted inside training folds), then 1 evaluation
+# job (nested CV, 16 CPUs). Finally summarize + figures, then the compute budget (sacct).
+set -euo pipefail
+: "${S:?}" "${OUT:?}" "${VENV:?}"
+ACCOUNT=${ACCOUNT:-rrg-glatard_cpu}
+SEEDS=${SEEDS:-0-29}
+DATASETS=${DATASETS:-"ds003478 ds002778 ds003490 ds004504 lemon sleep_edf bnci2014_001"}
+PY="source $VENV/bin/activate && python"
+PY_MR="source ${VENV_MR:-$VENV}/bin/activate && python"
+# the main environment must match phase 1 (numpy 2.4.2, scipy 1.17.1, scikit-learn 1.8.0, torch 2.14.1)
+bash -c "$PY -c 'import numpy,scipy,sklearn,torch;v=(numpy.__version__,scipy.__version__,sklearn.__version__,torch.__version__);print(\"main env:\",v);assert v[0].startswith(\"2.4.2\") and v[1].startswith(\"1.17.1\") and v[2].startswith(\"1.8.0\") and v[3].startswith(\"2.14.1\"),\"versions differ from phase 1\"'"
+mkdir -p logs "$OUT"
+[ -e "$OUT/job_ids.txt" ] && { echo "$OUT/job_ids.txt exists: use a new OUT"; exit 1; }
+log() { echo "$1 $2 $3" >> "$OUT/job_ids.txt"; }   # stage dataset job-id, for compute_cost.py
+N_CFG=$(bash -c "$PY -c 'import sys;sys.path.insert(0,\".\");from optimization.arch import ablation_grid;print(len(ablation_grid()))'")
+evals=()
+for ds in $DATASETS; do
+  mem=16G; [ "$ds" = lemon ] && mem=40G
+  common="--dataset $ds --data-root $S/data --out $OUT"
+  h=$(sbatch --parsable --account=$ACCOUNT --job-name=opt-hand-$ds --cpus-per-task=8 --mem=$mem \
+      --time=03:00:00 --output=logs/opt-hand-$ds-%j.log \
+      --wrap="$PY optimization/extract.py handcrafted $common --jobs 8")
+  c=$(sbatch --parsable --account=$ACCOUNT --job-name=opt-cnn-$ds --array=0-$((N_CFG-1)) \
+      --cpus-per-task=1 --mem=$mem --time=06:00:00 --output=logs/opt-cnn-$ds-%A_%a.log \
+      --wrap="$PY optimization/extract.py cnn $common --grid-index \$SLURM_ARRAY_TASK_ID --seeds $SEEDS")
+  r=$(sbatch --parsable --account=$ACCOUNT --job-name=opt-mrocket-$ds --cpus-per-task=8 --mem=$mem \
+      --time=12:00:00 --output=logs/opt-mrocket-$ds-%j.log \
+      --wrap="$PY_MR optimization/minirocket.py $common --seeds 0-9 --jobs 8")
+  e=$(sbatch --parsable --account=$ACCOUNT --job-name=opt-eval-$ds --dependency=afterok:$h:$c \
+      --cpus-per-task=16 --mem=32G --time=12:00:00 --output=logs/opt-eval-$ds-%j.log \
+      --wrap="$PY optimization/evaluate_dataset.py $common --nested --jobs 16")
+  log handcrafted $ds $h; log cnn $ds $c; log minirocket $ds $r; log evaluate $ds $e
+  evals+=("$e" "$r"); echo "$ds: handcrafted=$h cnn=$c eval=$e minirocket=$r"
+done
+dep=$(IFS=:; echo "${evals[*]}")
+sm=$(sbatch --parsable --account=$ACCOUNT --job-name=opt-summary --dependency=afterok:$dep --cpus-per-task=1 \
+  --mem=8G --time=00:30:00 --output=logs/opt-summary-%j.log \
+  --wrap="$PY optimization/summarize.py --out $OUT --phase1 $S/results/phase1 && $PY optimization/report.py --out $OUT")
+log summary all $sm
+# compute budget from SLURM accounting, after everything (also after failures)
+all=$(cut -d' ' -f3 "$OUT/job_ids.txt" | paste -sd:)
+sbatch --account=$ACCOUNT --job-name=opt-cost --dependency=afterany:$all --cpus-per-task=1 --mem=2G \
+  --time=00:15:00 --output=logs/opt-cost-%j.log --wrap="$PY optimization/compute_cost.py --out $OUT"
+echo "job ids: $OUT/job_ids.txt"
