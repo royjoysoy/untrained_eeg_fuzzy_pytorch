@@ -33,6 +33,11 @@ from optimization.runinfo import run_info  # noqa: E402
 from untrained_eeg.tasks import task_data, task_labels, task_names  # noqa: E402
 
 
+def done_files(paths):
+    """Finished feature files only: a write that failed (e.g. disk quota) leaves a *.tmp.npz."""
+    return sorted(p for p in paths if not p.name.endswith(".tmp.npz"))
+
+
 def load(path):
     """Features exactly as phase1_probe.py reads them: float32, as stored (no cast to
     float64, which moves probabilities by ~1e-5 and can swap near-tied AUC pairs)."""
@@ -109,8 +114,8 @@ def _main(a, root):
     cfg = dataset_config(a.dataset, a.data_root)
     labels, tasks = task_labels(cfg), task_names(cfg)
 
-    cnn_files = sorted((root / "features" / "cnn").glob("*/seed*.npz"))
-    hand_files = sorted((root / "features" / "handcrafted").glob("*.npz"))
+    cnn_files = done_files((root / "features" / "cnn").glob("*/seed*.npz"))
+    hand_files = done_files((root / "features" / "handcrafted").glob("*.npz"))
     # rule 5: every feature set must describe the same blocks (same participants, same order)
     ref = None
     for f in cnn_files + hand_files:
@@ -179,7 +184,7 @@ def _search(a, root):
     labels, tasks = task_labels(cfg), task_names(cfg)
     names = a.search_list.read_text().split()
     done = set(pd.read_csv(root / "per_seed.csv").config) if (root / "per_seed.csv").exists() else set()
-    files = {n: sorted((root / "features" / "cnn" / n).glob("seed*.npz")) for n in names}
+    files = {n: done_files((root / "features" / "cnn" / n).glob("seed*.npz")) for n in names}
     seeds = sorted({int(f.stem[4:]) for fs in files.values() for f in fs})[: a.nested_seeds]
     for n, fs in files.items():
         if {int(f.stem[4:]) for f in fs} < set(seeds):

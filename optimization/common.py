@@ -72,7 +72,7 @@ def save_features(out: Path, rows, pids, group: str, meta: dict):
     if out.exists():
         raise FileExistsError(out)  # never overwrite results
     out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(".tmp.npz")
+    tmp = out.with_suffix(".tmp.npz")  # renamed only once complete; a failed write leaves only tmp
     np.savez(tmp, feats=np.concatenate([f for f, _ in rows]).astype(np.float32),
              cond=np.concatenate([c for _, c in rows]),
              participant_id=np.concatenate([[p] * len(c) for p, (_, c) in zip(pids, rows)]),
