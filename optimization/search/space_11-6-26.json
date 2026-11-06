@@ -1,0 +1,1 @@
+{"n_filters": [64, 128, 256], "readout": ["mean", "meanstd_ppv_max"], "cov_channels": [0, 32]}

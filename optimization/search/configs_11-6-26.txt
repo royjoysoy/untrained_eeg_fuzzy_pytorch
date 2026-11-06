@@ -1,0 +1,13 @@
+cov_channels=32,n_filters=64
+cov_channels=32,n_filters=256
+n_filters=256
+cov_channels=32,n_filters=128
+n_filters=256,readout=meanstd_ppv_max
+n_filters=64,readout=meanstd_ppv_max
+cov_channels=32,n_filters=64,readout=meanstd_ppv_max
+cov_channels=32,n_filters=128,readout=meanstd_ppv_max
+n_filters=128
+n_filters=64
+cov_channels=32,n_filters=256,readout=meanstd_ppv_max
+n_filters=128,readout=meanstd_ppv_max
+default

@@ -32,11 +32,12 @@ REFS = [("phase1_shallow", "untrained ShallowFBCSPNet (phase 1)", "#eb6834", "-"
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--dest", default="summary")
     a = p.parse_args()
-    ps = pd.concat([pd.read_csv(f) for f in sorted(a.out.glob("*/per_seed.csv"))], ignore_index=True)
-    head = pd.read_csv(a.out / "summary" / "headline.csv").set_index(["dataset", "task"])
+    ps = pd.concat([pd.read_csv(f) for f in sorted(a.out.glob("*/per_seed.csv"))], ignore_index=True)  # grid factors only
+    head = pd.read_csv(a.out / a.dest / "headline.csv").set_index(["dataset", "task"])
     cnn = ps[ps.kind == "cnn"]
-    figdir = a.out / "summary" / "figures"
+    figdir = a.out / a.dest / "figures"
     figdir.mkdir(parents=True, exist_ok=True)
     tasks = list(head.index)
     for factor in sorted(set(cnn.factor) - {"default", "manual"}):

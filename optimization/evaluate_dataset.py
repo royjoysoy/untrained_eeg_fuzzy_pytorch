@@ -91,6 +91,13 @@ def main():
     p.add_argument("--jobs", type=int, default=1)
     a = p.parse_args()
     root = a.out / a.dataset
+    if a.search_list:  # search mode: only the listed configs, into separate files
+        for f in ("per_seed_search.csv", "nested_search.csv"):
+            if (root / f).exists():
+                raise FileExistsError(root / f)
+        with run_info(a.out, "evaluate_search", a.dataset):
+            _search(a, root)
+        return
     for f in ("per_seed.csv", "nested.csv"):
         if (root / f).exists():
             raise FileExistsError(root / f)
@@ -163,6 +170,39 @@ def _main(a, root):
         nrows += [nest(t, hand_files, "handcrafted", np.nan, comb) for t in tasks]
     pd.DataFrame(nrows).to_csv(root / "nested.csv", index=False, float_format="%.6g")
     print(f"wrote {root / 'nested.csv'} ({len(nrows)} rows)")
+
+
+def _search(a, root):
+    """Per-seed rows for search configs not already in per_seed.csv, and nested selection among
+    ALL search configs (including the current cnn1d), per seed and task."""
+    cfg = dataset_config(a.dataset, a.data_root)
+    labels, tasks = task_labels(cfg), task_names(cfg)
+    names = a.search_list.read_text().split()
+    done = set(pd.read_csv(root / "per_seed.csv").config) if (root / "per_seed.csv").exists() else set()
+    files = {n: sorted((root / "features" / "cnn" / n).glob("seed*.npz")) for n in names}
+    seeds = sorted({int(f.stem[4:]) for fs in files.values() for f in fs})[: a.nested_seeds]
+    for n, fs in files.items():
+        if {int(f.stem[4:]) for f in fs} < set(seeds):
+            raise ValueError(f"{n}: features missing for some seeds")
+    new = [f for n in names if n not in done for f in files[n]]
+    rows = Parallel(n_jobs=a.jobs)(delayed(eval_file)(f, cfg, labels, tasks, a.dataset) for f in new)
+    pd.DataFrame([r for rr in rows for r in rr]).to_csv(root / "per_seed_search.csv", index=False, float_format="%.6g")
+    print(f"wrote {root / 'per_seed_search.csv'}", flush=True)
+
+    def nest(task, seed):
+        t0 = time.time()
+        cands = {}
+        for n in names:
+            d = load(root / "features" / "cnn" / n / f"seed{seed:03d}.npz")
+            X, y, groups, _ = task_data(d["feats"], d["cond"], d["pid"], task, labels)
+            cands[n] = (X, ())
+        _, auc, bacc, chosen = nested(cands, y, groups, task, cfg)
+        return dict(dataset=a.dataset, task=task, kind="cnn_search", seed=seed, n_candidates=len(cands),
+                    auc=auc, balanced_accuracy=bacc, nested_seconds=time.time() - t0,
+                    chosen=json.dumps(pd.Series(chosen).value_counts().to_dict()))
+    nrows = Parallel(n_jobs=a.jobs)(delayed(nest)(t, s) for t in tasks for s in seeds)
+    pd.DataFrame(nrows).to_csv(root / "nested_search.csv", index=False, float_format="%.6g")
+    print(f"wrote {root / 'nested_search.csv'}", flush=True)
 
 
 if __name__ == "__main__":

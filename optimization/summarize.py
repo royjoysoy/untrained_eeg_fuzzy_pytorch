@@ -72,16 +72,20 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--phase1", type=Path, default=None)
+    p.add_argument("--dest", default="summary", help="output folder name inside --out")
+    p.add_argument("--search-list", type=Path, default=None,
+                   help="search config names: adds a leave-one-dataset-out choice among them")
     a = p.parse_args()
-    dest = a.out / "summary"
+    dest = a.out / a.dest
     if dest.exists():
         raise FileExistsError(dest)
-    files = sorted(a.out.glob("*/per_seed.csv")) + sorted(a.out.glob("*/minirocket.csv"))
+    files = (sorted(a.out.glob("*/per_seed.csv")) + sorted(a.out.glob("*/per_seed_search.csv"))
+             + sorted(a.out.glob("*/minirocket.csv")))
     per_seed = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
     for col in ("n_params", "n_windows", "probe_seconds"):
         if col not in per_seed:
             per_seed[col] = np.nan
-    nfiles = sorted(a.out.glob("*/nested.csv"))
+    nfiles = sorted(a.out.glob("*/nested.csv")) + sorted(a.out.glob("*/nested_search.csv"))
     dest.mkdir(parents=True)
 
     keys = ["dataset", "task", "kind", "factor", "value", "config"]
@@ -97,6 +101,10 @@ def main():
     res.to_csv(dest / "results.csv", index=False, float_format="%.4g")
 
     lo = pd.concat([lodo(per_seed, "cnn"), lodo(per_seed, "handcrafted")], ignore_index=True)
+    if a.search_list:
+        names = set(a.search_list.read_text().split())
+        s = per_seed[(per_seed.kind == "cnn") & per_seed.config.isin(names)].assign(factor="search")
+        lo = pd.concat([lo, lodo(s, "cnn").assign(kind="cnn_search_lodo")], ignore_index=True)
     lo.to_csv(dest / "lodo.csv", index=False, float_format="%.4g")
 
     nest = pd.DataFrame()
@@ -122,7 +130,7 @@ def main():
                           ("handcrafted", "handcrafted_nested")):
             sel = nest[(nest.dataset == ds) & (nest.task == task) & (nest.kind == kind)] if len(nest) else nest
             row[col] = sel.auc_mean.iloc[0] if len(sel) else np.nan
-        for kind in ("cnn_lodo", "handcrafted_lodo"):
+        for kind in ("cnn_lodo", "cnn_search_lodo", "handcrafted_lodo"):
             sel = lo[(lo.dataset == ds) & (lo.task == task) & (lo.kind == kind)] if len(lo) else lo
             row[kind] = sel.auc_mean.iloc[0] if len(sel) else np.nan
             row[kind + "_config"] = sel.chosen.iloc[0] if len(sel) else ""
