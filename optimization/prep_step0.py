@@ -118,4 +118,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # one BLAS thread, as in step (a)'s probes (joblib workers get one thread each): the thread
+    # count changes summation order, which moves e.g. the 5-class AUC in the 5th decimal
+    from threadpoolctl import threadpool_limits
+    with threadpool_limits(1):
+        main()
