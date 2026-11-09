@@ -14,6 +14,9 @@ on example series, i.e. learned from data. So for every outer split of every tas
 Outer splits are untrained_eeg.tasks._outer_splits with the config's cv_seed (the same
 as every other extractor). random_state (channel combinations, example choice) = seed.
 Writes <out>/<dataset>/minirocket.csv with per_seed.csv's columns (kind = minirocket).
+Step (b): --prep <level> reads that preprocessing level (optimization/prep.py) and writes
+under <out>/prep/<level>/ (artifact windows left out of the block means, median / trimmed
+aggregation applied to the window features, as for the CNN).
 """
 
 import argparse
@@ -26,7 +29,8 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from optimization.common import dataset_config, load_windows  # noqa: E402
+from optimization import prep  # noqa: E402
+from optimization.common import aggregate, dataset_config, load_windows  # noqa: E402
 from optimization.evaluate import _finish, estimator  # noqa: E402
 from optimization.runinfo import run_info  # noqa: E402
 from untrained_eeg.tasks import MULTICLASS, WITHIN_SUBJECT, _outer_splits, task_data, task_labels, task_names  # noqa: E402
@@ -42,8 +46,11 @@ def seed_range(text):
 class Blocks:
     """Index from blocks to their windows, for all participants."""
 
-    def __init__(self, participants, windows, per_block):
+    def __init__(self, participants, windows, per_block, keep=None, agg="mean"):
         self.W, self.pid, self.cond, self.start = [], [], [], []
+        self.keep = None if keep is None else np.concatenate(
+            [keep[p][: len(windows[p][0]) // per_block * per_block] for p in participants["participant_id"]])
+        self.agg = agg
         off = 0
         for p in participants["participant_id"]:
             X, c = windows[p]
@@ -67,8 +74,12 @@ def block_means(model, B, blocks, chunk=2000):
     rows = []
     for i in range(0, len(blocks), step):
         b = blocks[i: i + step]
-        F = np.asarray(model.transform(B.W[B.windows_of(b)]), np.float32)
-        rows.append(F.reshape(len(b), B.per_block, -1).mean(axis=1))
+        w = B.windows_of(b)
+        F = np.asarray(model.transform(B.W[w]), np.float32).reshape(len(b), B.per_block, -1)
+        if B.keep is None and B.agg == "mean":
+            rows.append(F.mean(axis=1))  # the step-(a) code path
+        else:
+            rows.append(aggregate(F, None if B.keep is None else B.keep[w], B.agg))
     return np.concatenate(rows)
 
 
@@ -109,26 +120,39 @@ def main():
     p.add_argument("--max-fit-windows", type=int, default=5000,
                    help="training windows sampled to fit the biases (MiniRocket only needs examples)")
     p.add_argument("--jobs", type=int, default=int(os.environ.get("SLURM_CPUS_PER_TASK", 1)))
+    p.add_argument("--prep", choices=list(prep.LEVELS), default=None, help="step (b) preprocessing level")
+    p.add_argument("--cache-root", type=Path, default=None, help="where raw-based level caches live")
     a = p.parse_args()
+    if a.prep and not prep.for_minirocket(a.prep):
+        print(f"{a.prep}: MiniRocket input is the same as another level's; nothing to do")
+        return
+    run_out = a.out
+    if a.prep:
+        a.out = a.out / "prep" / a.prep
     dest = a.out / a.dataset / "minirocket.csv"
     if dest.exists():
         raise FileExistsError(dest)
-    with run_info(a.out, "minirocket", a.dataset, extra=dict(seeds=a.seeds)):
+    with run_info(run_out, "minirocket", a.dataset, extra=dict(seeds=a.seeds, prep=a.prep)):
         _main(a, dest)
 
 
 def _main(a, dest):
-    cfg = dataset_config(a.dataset, a.data_root)
-    participants, windows, per_block = load_windows(cfg)
-    B = Blocks(participants, windows, per_block)
+    if a.prep:
+        cfg, participants, windows, per_block, keep = prep.load(a.dataset, a.data_root, a.prep, a.cache_root)
+        B = Blocks(participants, windows, per_block, keep, prep.LEVELS[a.prep].agg)
+    else:
+        cfg = dataset_config(a.dataset, a.data_root)
+        participants, windows, per_block = load_windows(cfg)
+        B = Blocks(participants, windows, per_block)
+    fac, val = (prep.LEVELS[a.prep].factor, a.prep) if a.prep else ("baseline", "minirocket")
     labels, tasks = task_labels(cfg), task_names(cfg)
     rows = []
     for seed in a.seeds:
         for task in tasks:
             t0 = time.time()
             (_, auc, bacc), dim, n = run_task(B, task, labels, cfg, seed, a.jobs, a.max_fit_windows)
-            rows.append(dict(dataset=a.dataset, task=task, kind="minirocket", factor="baseline",
-                             value="minirocket", config="minirocket", seed=seed, n=n, auc=auc,
+            rows.append(dict(dataset=a.dataset, task=task, kind="minirocket", factor=fac,
+                             value=val, config="minirocket", seed=seed, n=n, auc=auc,
                              balanced_accuracy=bacc, feature_dim=dim, receptive_field_s=np.nan,
                              extract_seconds=time.time() - t0, n_windows=len(B.W), n_jobs=a.jobs))
             print(f"{a.dataset} {task:14s} seed{seed} AUC {auc:.3f} bacc {bacc:.3f} "

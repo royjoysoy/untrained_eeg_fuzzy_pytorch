@@ -61,10 +61,26 @@ def load_windows(cfg: dict):
     return participants, windows, per_block
 
 
-def block_features(feats: np.ndarray, cond: np.ndarray, per_block: int):
-    """Mean of each block's windows (same as scripts/phase1_features.block_features)."""
+def block_features(feats: np.ndarray, cond: np.ndarray, per_block: int, keep=None, agg="mean"):
+    """One feature vector per block from its windows' features.
+
+    Default: mean of the block's windows, exactly scripts/phase1_features.block_features.
+    Step (b) options: `keep` (bool per window, False = rejected artifact window) and
+    `agg` = "median" or "trim20" (20 % trimmed mean) instead of the mean.
+    """
     n = len(feats) // per_block
-    return feats[: n * per_block].reshape(n, per_block, -1).mean(axis=1), cond[::per_block][:n]
+    if keep is None and agg == "mean":  # the phase-1 code path, bit for bit
+        return feats[: n * per_block].reshape(n, per_block, -1).mean(axis=1), cond[::per_block][:n]
+    return aggregate(feats[: n * per_block].reshape(n, per_block, -1), keep, agg), cond[::per_block][:n]
+
+
+def aggregate(F: np.ndarray, keep=None, agg="mean"):
+    """(n_blocks, per_block, n_features) -> (n_blocks, n_features), over the kept windows only."""
+    from scipy.stats import trim_mean
+    K = np.ones(F.shape[:2], bool) if keep is None else np.asarray(keep).reshape(F.shape[:2])
+    how = {"mean": lambda a: a.mean(axis=0), "median": lambda a: np.median(a, axis=0),
+           "trim20": lambda a: trim_mean(a, 0.2, axis=0)}[agg]
+    return np.stack([how(F[i][K[i]]) for i in range(len(F))]).astype(F.dtype)
 
 
 def save_features(out: Path, rows, pids, group: str, meta: dict):
@@ -80,4 +96,5 @@ def save_features(out: Path, rows, pids, group: str, meta: dict):
     tmp.replace(out)
 
 
-__all__ = ["DATASETS", "ROOT", "dataset_config", "load_windows", "block_features", "save_features", "embed"]
+__all__ = ["DATASETS", "ROOT", "dataset_config", "load_windows", "block_features", "aggregate",
+           "save_features", "embed"]
