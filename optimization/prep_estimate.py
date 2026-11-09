@@ -34,10 +34,14 @@ def cpu_hours(rec):
 
 def measured(dirs):
     """{(dataset, stage): CPU-h} from step (a)'s run records (successful runs only)."""
-    out = {}
+    out, bad = {}, []
     for d in dirs:
         for f in (d / "run_info").glob("*.json"):
-            r = json.loads(f.read_text())
+            try:
+                r = json.loads(f.read_text())
+            except (json.JSONDecodeError, OSError):  # e.g. empty: written while the disk was full
+                bad.append(f.name)
+                continue
             if r.get("status") != "ok" or not r.get("dataset"):
                 continue
             cfgs = r.get("configs") or []
@@ -49,6 +53,8 @@ def measured(dirs):
             if stage:
                 key = (r["dataset"], stage)
                 out[key] = out.get(key, 0) + cpu_hours(r)  # search chunks add up to 30 seeds
+    if bad:
+        print(f"skipped {len(bad)} unreadable run records: {' '.join(sorted(bad)[:10])}{' ...' if len(bad) > 10 else ''}")
     return out
 
 
