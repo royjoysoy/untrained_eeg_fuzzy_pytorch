@@ -35,7 +35,8 @@ def seed_range(text):
 
 def same_file(ours, theirs):
     A, B = np.load(ours), np.load(theirs)
-    return (A["feats"].dtype == B["feats"].dtype and np.array_equal(A["feats"], B["feats"])
+    # equal_nan: a failed fit (e.g. FOOOF's aperiodic) stores NaN, and NaN != NaN otherwise
+    return (A["feats"].dtype == B["feats"].dtype and np.array_equal(A["feats"], B["feats"], equal_nan=True)
             and np.array_equal(A["participant_id"], B["participant_id"]) and np.array_equal(A["cond"], B["cond"]))
 
 
