@@ -175,11 +175,18 @@ OUT=$PWD/results/optimization/11-11-26
 S=/project/rrg-glatard/shared/untrained_eeg A=$A OUT=$OUT VENV=$HOME/venv/uneeg_opt bash optimization/slurm/run_readout_step0.sh
 # estimate from step 0 and step (b)'s measured times; ask before the main run
 python optimization/readout_estimate.py --out $OUT --step-b $A/11-9-26
+# main run (after approval): extraction, probes, nested selection, summary
+S=/project/rrg-glatard/shared/untrained_eeg A=$A OUT=$OUT VENV=$HOME/venv/uneeg_opt bash optimization/slurm/run_readout.sh
 ```
+
+Selection and summary reuse `prep_select.py` with `--study readout`: outputs in
+`<out>/readout_summary/` (same tables as step (b)). Handcrafted features and MiniRocket are not
+rerun: `--baselines $A/11-9-26` takes them from step (b)'s reference level (same samples, folds).
 
 | File | Role |
 |---|---|
 | `readout.py` | levels, where they apply, the architecture run at each level |
 | `readout_step0.py` | reference = step (a) bit for bit; sanity checks of every level; probe timing |
 | `readout_estimate.py` | CPU-hours from step 0 and step (b)'s measured times |
-| `slurm/run_readout_step0.sh` | step-0 jobs |
+| `slurm/run_readout_step0.sh`, `slurm/run_readout.sh` | step-0 jobs; main run |
+| `prep_select.py --study readout` | nested and LODO selection of the readout level; `readout_summary/` |

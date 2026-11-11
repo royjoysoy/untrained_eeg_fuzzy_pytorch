@@ -90,6 +90,10 @@ def for_handcrafted(level: str) -> bool:  # the readout is a CNN choice: baselin
     return False
 
 
+def for_minirocket(level: str) -> bool:
+    return False
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("what", choices=["levels"])

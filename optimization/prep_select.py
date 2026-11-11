@@ -1,8 +1,11 @@
 #!/usr/bin/env python
-"""Step (b): choose the preprocessing level without peeking, and summarize.
+"""Steps (b) and (a'): choose the level without peeking, and summarize.
 
     python optimization/prep_select.py nested --dataset ds003478 --data-root $S/data --out $OUT --jobs 16
     python optimization/prep_select.py summary --out $OUT
+Step (a') readouts: add --study readout (folders readout/ and readout_summary/, levels from
+readout.py); its summary takes the handcrafted and MiniRocket baselines from step (b)'s
+reference level with --baselines $A/11-9-26 (they do not depend on the CNN readout).
 
 Inputs: <out>/prep/<level>/<dataset>/{features/, per_seed.csv, minirocket.csv} from
 extract.py, evaluate_dataset.py and minirocket.py run with --prep <level>.
@@ -34,11 +37,21 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from optimization import prep  # noqa: E402
+from optimization import prep, readout  # noqa: E402
 from optimization.common import DATASETS, dataset_config  # noqa: E402
 from optimization.evaluate import nested  # noqa: E402
 from optimization.evaluate_dataset import combined_handcrafted, done_files, load  # noqa: E402
 from untrained_eeg.tasks import task_data, task_labels, task_names  # noqa: E402
+
+class Study:
+    """Which level family is selected: `prep` (step b, default) or `readout` (step a')."""
+    mod, dir, summary = prep, "prep", "prep_summary"
+
+    @classmethod
+    def use(cls, name):
+        cls.mod, cls.dir, cls.summary = {"prep": (prep, "prep", "prep_summary"),
+                                         "readout": (readout, "readout", "readout_summary")}[name]
+
 
 AGG = dict(n_seeds=("seed", lambda s: int(s.notna().sum()) or 1),
            auc_mean=("auc", "mean"), auc_sd=("auc", "std"), auc_min=("auc", "min"), auc_max=("auc", "max"),
@@ -48,17 +61,17 @@ AGG = dict(n_seeds=("seed", lambda s: int(s.notna().sum()) or 1),
 
 def levels_of(dataset):
     cfg = dataset_config(dataset, None)
-    return [lv for lv in prep.LEVELS if prep.applies(lv, cfg)]
+    return [lv for lv in Study.mod.LEVELS if Study.mod.applies(lv, cfg)]
 
 
 # --------------------------------------------------------------------------- nested
 def run_nested(a):
     cfg = dataset_config(a.dataset, a.data_root)
     labels, tasks = task_labels(cfg), task_names(cfg)
-    dest = a.out / "prep_summary" / f"nested_{a.dataset}.csv"
+    dest = a.out / Study.summary / f"nested_{a.dataset}.csv"
     if dest.exists():
         raise FileExistsError(dest)
-    root = lambda lv: a.out / "prep" / lv / a.dataset / "features"
+    root = lambda lv: a.out / Study.dir / lv / a.dataset / "features"
     levels = levels_of(a.dataset)
     ref_rows = None
 
@@ -102,7 +115,7 @@ def run_nested(a):
             per = {lv: root(lv) / "cnn" / arch / f"seed{s:03d}.npz" for lv in levels}
             jobs += [(t, f"cnn:{arch}", per, s) for t in tasks]
     hand = {}  # (level, family) -> file or combined dict
-    for lv in [lv for lv in levels if prep.for_handcrafted(lv)]:
+    for lv in [lv for lv in levels if Study.mod.for_handcrafted(lv)]:
         fs = done_files((root(lv) / "handcrafted").glob("*.npz"))
         if not fs:
             continue
@@ -120,10 +133,10 @@ def run_nested(a):
 
 
 # --------------------------------------------------------------------------- summary
-def per_seed_table(out):
+def per_seed_table(out, study_dir="prep"):
     """All per-seed rows, with `kind` = cnn:<arch>, handcrafted:<family> or minirocket."""
     parts = []
-    for f in sorted(out.glob("prep/*/*/per_seed.csv")) + sorted(out.glob("prep/*/*/minirocket.csv")):
+    for f in sorted(out.glob(f"{study_dir}/*/*/per_seed.csv")) + sorted(out.glob(f"{study_dir}/*/*/minirocket.csv")):
         d = pd.read_csv(f)
         d["level"] = f.parts[-3]
         d["kind"] = np.where(d.kind == "cnn", "cnn:" + d.config,
@@ -137,7 +150,7 @@ def stand_in(level, have):
     the CNN), otherwise the reference (the level does not apply to that dataset or kind)."""
     if level in have:
         return level
-    return "sf256" if prep.LEVELS[level].kernel_x2 and "sf256" in have else "ref"
+    return "sf256" if getattr(Study.mod.LEVELS[level], "kernel_x2", False) and "sf256" in have else "ref"
 
 
 def fill_levels(means):
@@ -145,7 +158,7 @@ def fill_levels(means):
     rows = []
     for _, g in means.groupby(["dataset", "task", "kind"]):
         have = set(g.level)
-        for lv in prep.LEVELS:
+        for lv in Study.mod.LEVELS:
             src = g[g.level == stand_in(lv, have)]
             rows.append(src.assign(level=lv, applies=lv in have))
     return pd.concat(rows, ignore_index=True)
@@ -162,6 +175,8 @@ def lodo(per_seed):
     full["rank"] = full.groupby(["dataset", "task", "kind"]).auc.rank(ascending=False)
     rows = []
     for kind, k in full.groupby("kind"):
+        if per_seed[per_seed.kind == kind].level.nunique() < 2:
+            continue  # nothing to choose (step a' baselines exist at the reference only)
         for held in sorted(k.dataset.unique()):
             other = k[k.dataset != held]
             if other.empty:
@@ -179,26 +194,44 @@ def missing_levels(ps):
     out = []
     for (ds, kind), g in ps.groupby(["dataset", "kind"]):
         cfg = dataset_config(ds, None)
-        want = [lv for lv in prep.LEVELS if prep.applies(lv, cfg)]
+        want = [lv for lv in Study.mod.LEVELS if Study.mod.applies(lv, cfg)]
         if kind.startswith("handcrafted:"):
-            want = [lv for lv in want if prep.for_handcrafted(lv)]
+            want = [lv for lv in want if Study.mod.for_handcrafted(lv)]
         elif kind == "minirocket":
-            want = [lv for lv in want if prep.for_minirocket(lv)]
+            want = [lv for lv in want if Study.mod.for_minirocket(lv)]
         out += [f"{ds} {kind} {lv}" for lv in want if lv not in set(g.level)]
     return out
 
 
+def baselines(step_b):
+    """Handcrafted (each family, and the nested family choice) and MiniRocket rows of step (b)'s
+    reference level: the same data, samples and folds as every CNN readout level."""
+    ps = per_seed_table(step_b, "prep")
+    ps = ps[(ps.level == "ref") & ~ps.kind.str.startswith("cnn:")]
+    nest = [pd.read_csv(f) for f in sorted((step_b / "prep_summary").glob("nested_*.csv"))]
+    if nest:
+        h = pd.concat(nest, ignore_index=True)
+        h = h[h.kind == "handcrafted@ref"].assign(kind="handcrafted", level="ref")
+        ps = pd.concat([ps, h[["dataset", "task", "kind", "level", "seed", "auc", "balanced_accuracy"]]],
+                       ignore_index=True)
+    if ps.empty:
+        raise SystemExit(f"no step-(b) reference baselines under {step_b}")
+    return ps
+
+
 def run_summary(a):
-    dest = a.out / "prep_summary"
+    dest = a.out / Study.summary
     for f in ("results.csv", "factor_effects.csv", "lodo.csv", "nested.csv", "headline.csv"):
         if (dest / f).exists():
             raise FileExistsError(dest / f)
     dest.mkdir(parents=True, exist_ok=True)
-    ps = per_seed_table(a.out)
+    ps = per_seed_table(a.out, Study.dir)
     missing = missing_levels(ps)
     if missing and not a.allow_missing:
         raise SystemExit("levels that apply but have no results (failed jobs?):\n  " + "\n  ".join(missing)
                          + "\nrerun them, or pass --allow-missing for a partial look")
+    if a.baselines:  # step (a'): handcrafted and MiniRocket at step (b)'s reference level
+        ps = pd.concat([ps, baselines(a.baselines)], ignore_index=True)
     nest = pd.concat([pd.read_csv(f) for f in sorted(dest.glob("nested_*.csv"))], ignore_index=True) \
         if list(dest.glob("nested_*.csv")) else pd.DataFrame()
 
@@ -210,7 +243,7 @@ def run_summary(a):
                        ignore_index=True)
 
     res = ps.groupby(["dataset", "task", "kind", "level"], sort=False).agg(**AGG).reset_index()
-    res["factor"] = res.level.map(lambda lv: prep.LEVELS[lv].factor)
+    res["factor"] = res.level.map(lambda lv: Study.mod.LEVELS[lv].factor)
     ref = res[res.level == "ref"].set_index(["dataset", "task", "kind"]).auc_mean
     res["delta_auc_vs_ref"] = [r.auc_mean - ref.get((r.dataset, r.task, r.kind), np.nan) for r in res.itertuples()]
     res.to_csv(dest / "results.csv", index=False, float_format="%.4g")
@@ -254,9 +287,13 @@ def main():
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--jobs", type=int, default=1)
     p.add_argument("--allow-missing", action="store_true", help="summary: allow levels without results")
+    p.add_argument("--study", choices=["prep", "readout"], default="prep")
+    p.add_argument("--baselines", type=Path, default=None,
+                   help="summary --study readout: step (b) results folder (handcrafted, MiniRocket at ref)")
     a = p.parse_args()
+    Study.use(a.study)
     from optimization.runinfo import run_info
-    with run_info(a.out, f"prep_{a.what}", a.dataset):
+    with run_info(a.out, f"{a.study}_{a.what}", a.dataset):
         run_nested(a) if a.what == "nested" else run_summary(a)
 
 
