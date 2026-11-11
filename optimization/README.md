@@ -97,3 +97,56 @@ with any timing.
 | `minirocket.py` | MiniRocket baseline (aeon): biases fitted on training windows of each outer split, same blocks, splits and probe; 10 seeds |
 | `runinfo.py`, `compute_cost.py` | run records and the compute budget (sacct) |
 | `step0_check.py`, `benchmark.py`, `random_search.py`, `slurm/run_optimization.sh` | as named |
+
+## Step (b): preprocessing (architecture and probe fixed)
+
+Question: does changing the input (not the network) close the gap to handcrafted features?
+Two fixed architectures: the phase-1 `default` and step (a)'s LODO pick
+`cov_channels=32,n_filters=256,readout=meanstd_ppv_max`. One factor at a time away from the
+phase-1 cache ("ref"); 30 weight seeds; MiniRocket (10 seeds) and handcrafted features get the
+same input. Levels, and where they apply, are in `prep.py`:
+
+| factor | levels | applies to |
+|---|---|---|
+| window length | 4 s, 10 s (cached windows joined) | resting datasets; BNCI 4 s only; not Sleep-EDF |
+| normalization | z-score per participant and channel; per window and channel | all |
+| artifact windows | peak-to-peak > 150 uV; > median + 5 MAD (per participant) | resting datasets |
+| block aggregation | median, 20 % trimmed mean | resting datasets |
+| band-pass | extra 30 Hz low-pass (cache); 0.5-45 Hz (new cache from raw) | all |
+| sampling rate | 256 Hz (phase-1 `fm256` cache); 256 Hz with first kernel and pooling x2 | not Sleep-EDF |
+
+Not a factor: re-referencing (the cache is already average-referenced, so it changes nothing).
+A block whose windows would all be rejected keeps them all, so every level has the same samples
+and folds. Selection: `nested` (level chosen inside the outer training folds, per task and seed)
+and leave-one-dataset-out (`prep_select.py`). Handcrafted features use whole blocks, so window
+length and aggregation do not change them.
+
+```bash
+S=/project/rrg-glatard/shared/untrained_eeg
+A=/project/rrg-glatard/royjoy/uneeg_opt_results/optimization       # step (a) results
+C=/project/rrg-glatard/royjoy/uneeg_prep_cache                     # new caches (bp05_45)
+OUT=$PWD/results/optimization/11-9-26
+# 1. estimate from step (a)'s measured times; ask before running
+python optimization/prep_estimate.py --step-a $A/11-5-26 $A/11-5-26b
+# 2. build the 0.5-45 Hz caches from raw (needs MNE; one job per dataset)
+python optimization/prep.py build --dataset ds003478 --data-root $S/data --cache-root $C
+# 3. step 0: reference level = step (a), bit for bit; every level keeps the same blocks
+python optimization/extract.py cnn --dataset ds003478 --data-root $S/data --out $OUT --prep ref \
+    --configs default cov_channels=32,n_filters=256,readout=meanstd_ppv_max --seeds 0-2
+python optimization/extract.py handcrafted --dataset ds003478 --data-root $S/data --out $OUT --prep ref --jobs 8
+python optimization/prep_step0.py --dataset ds003478 --data-root $S/data --out $OUT --cache-root $C \
+    --step-a $A/11-5-26 $A/11-5-26b --check-levels
+# 4. everything else (after approval)
+S=$S C=$C OUT=$OUT VENV=$HOME/venv/uneeg_opt VENV_MR=$HOME/venv/uneeg_mr bash optimization/slurm/run_prep.sh
+```
+
+| File | Role |
+|---|---|
+| `prep.py` | levels, where they apply, transforms of cached windows, raw-based cache build |
+| `prep_step0.py` | reference = step (a) bit for bit; same blocks at every level |
+| `prep_select.py` | nested and LODO selection of the level; `prep_summary/` tables |
+| `prep_estimate.py` | CPU-hours from step (a)'s measured times |
+| `slurm/run_prep.sh` | all jobs |
+
+Outputs: `<out>/prep/<level>/<dataset>/` (features, `per_seed.csv`, `minirocket.csv`) and
+`<out>/prep_summary/` (`results.csv`, `factor_effects.csv`, `nested.csv`, `lodo.csv`, `headline.csv`).

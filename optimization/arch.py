@@ -34,7 +34,8 @@ class ArchConfig:
     # d. multi-scale first layer: kernels of parallel branches, or ()
     multiscale: tuple = ()
     # e. depth and width
-    n_blocks: int = 2                  # conv blocks; AvgPool(4) between blocks
+    n_blocks: int = 2                  # conv blocks; AvgPool(pool) between blocks
+    pool: int = 4                      # 8 at 256 Hz keeps the later layers' time spans as at 128 Hz
     n_filters: int = 32                # first block width; doubles every block
     # f. initialisation
     init: str = "torch_default"        # torch_default | kaiming_normal | xavier_uniform | gaussian
@@ -56,8 +57,8 @@ class ArchConfig:
         k1 = max(self.multiscale) if self.multiscale else self.kernel1
         rf, jump = 1 + (k1 - 1) * self.dilation, 1
         for _ in range(1, self.n_blocks):
-            jump *= 4
-            rf += 3 * (jump // 4) + (self.kernel_rest - 1) * self.dilation * jump
+            jump *= self.pool
+            rf += (self.pool - 1) * (jump // self.pool) + (self.kernel_rest - 1) * self.dilation * jump
         return rf
 
 
@@ -209,7 +210,7 @@ class ConfigurableCNN1d(nn.Module):
         outs = []
         for b, conv in enumerate(self.convs):
             if b > 0:
-                x = F.avg_pool1d(x, 4)
+                x = F.avg_pool1d(x, self.cfg.pool)
             x = self._act(conv(x))
             outs.append(x)
         keep = outs if self.cfg.readout_blocks == "all" else outs[-1:]
