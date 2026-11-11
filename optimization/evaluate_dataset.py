@@ -125,8 +125,9 @@ def _main(a, root):
         if key != ref:
             raise ValueError(f"block rows differ: {f}")
 
-    rows = Parallel(n_jobs=a.jobs)(delayed(eval_file)(f, cfg, labels, tasks, a.dataset)
-                                   for f in cnn_files + hand_files)
+    print(f"probing {len(cnn_files)} CNN + {len(hand_files)} handcrafted files on {len(tasks)} tasks", flush=True)
+    rows = Parallel(n_jobs=a.jobs, verbose=10)(delayed(eval_file)(f, cfg, labels, tasks, a.dataset)
+                                               for f in cnn_files + hand_files)  # verbose: progress in the log
     rows = [r for rr in rows for r in rr]
     if hand_files:
         comb = combined_handcrafted(hand_files)
