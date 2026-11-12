@@ -9,6 +9,8 @@ Handcrafted families:
     python optimization/extract.py handcrafted --dataset ds003478 --data-root $S/data --out ... --jobs 8
 Step (b), one preprocessing level (optimization/prep.py), written under <out>/prep/<level>/:
     python optimization/extract.py cnn ... --configs default --prep win4 [--cache-root $C]
+Step (a'), one readout level (optimization/readout.py), written under <out>/readout/<level>/:
+    python optimization/extract.py cnn ... --configs default --readout logvar
 
 Writes <out>/<dataset>/features/cnn/<config>/seed###.npz and
 <out>/<dataset>/features/handcrafted/<family>.npz. Existing files are skipped (resumable),
@@ -28,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from optimization.common import block_features, dataset_config, embed, load_windows, save_features  # noqa: E402
 from optimization.arch import ArchConfig, ConfigurableCNN1d, ablation_grid, from_name, prepare_input  # noqa: E402
 from optimization.runinfo import run_info  # noqa: E402
-from optimization import prep  # noqa: E402
+from optimization import prep, readout  # noqa: E402
 
 
 def seed_range(text):
@@ -49,12 +51,17 @@ def run_cnn(args, cfg, participants, windows, per_block, keep=None):
         configs = [grid.get(n, ("manual", n, from_name(n))) for n in args.configs]
     for fac, val, arch in configs:
         inputs = None  # built once per config (unc3 depends only on the config)
+        agg = "mean"
         if args.prep:  # step (b): factor/value describe the preprocessing level, the folder the arch
             fac, val = prep.LEVELS[args.prep].factor, args.prep
             run = prep.arch_for(arch, args.prep)  # sf256_k2 doubles the first kernel and the pooling
+            agg = prep.LEVELS[args.prep].agg
+        elif args.readout:  # step (a'): same weights, another readout
+            fac, val = readout.LEVELS[args.readout].factor, args.readout
+            run = readout.arch_for(arch, args.readout, cfg["sfreq"])
+            agg = readout.LEVELS[args.readout].agg
         else:
             run = arch
-        agg = prep.LEVELS[args.prep].agg if args.prep else "mean"
         for seed in args.seeds:
             out = args.out / args.dataset / "features" / "cnn" / arch.name() / f"seed{seed:03d}.npz"
             if out.exists():
@@ -76,6 +83,11 @@ def run_cnn(args, cfg, participants, windows, per_block, keep=None):
             if args.prep:
                 meta.update(prep=args.prep, arch_run=run.name(), sfreq=cfg["sfreq"],
                             window_s=cfg["window_s"], **prep.rejection_stats(keep))
+            if args.readout:
+                meta.update(readout=args.readout, arch_run=run.name(), agg=agg)
+                spd = model.spd_blocks(meta["feature_dim"] // (2 if agg == "mean_sd" else 1))
+                if spd:  # evaluate.RiemannTangent projects these columns inside the training folds
+                    meta["spd_blocks"] = spd
             save_features(out, rows, pids, "untrained", meta)
             print(f"{args.dataset} {arch.name():40s} seed{seed:03d} {meta['feature_dim']:6d} feats "
                   f"{meta['extract_seconds']:.1f}s", flush=True)
@@ -136,7 +148,11 @@ def main():
     p.add_argument("--prep", choices=list(prep.LEVELS), default=None,
                    help="step (b) preprocessing level; output goes to <out>/prep/<level>")
     p.add_argument("--cache-root", type=Path, default=None, help="where raw-based level caches live")
+    p.add_argument("--readout", choices=list(readout.LEVELS), default=None,
+                   help="step (a') readout level; output goes to <out>/readout/<level>")
     a = p.parse_args()
+    if a.readout and (a.prep or a.kind != "cnn"):
+        raise SystemExit("--readout: CNN features only, with the reference preprocessing (no --prep)")
     if a.prep and a.kind == "handcrafted" and not prep.for_handcrafted(a.prep):
         print(f"{a.prep}: handcrafted features equal those of the reference (or sf256); nothing to do")
         return
@@ -150,8 +166,14 @@ def main():
             rec["prep"] = a.prep
         else:
             cfg = dataset_config(a.dataset, a.data_root)
+            if a.readout and not readout.applies(a.readout, cfg):
+                print(f"{a.readout} does not apply to {a.dataset} (it equals the reference there)")
+                return
             participants, windows, per_block = load_windows(cfg)
             keep = None
+            if a.readout:
+                a.out = a.out / "readout" / a.readout
+                rec["readout"] = a.readout
         rec["load_seconds"] = round(time.time() - t0, 2)
         rec["configs"] = a.configs if a.grid_index is None else [ablation_grid()[a.grid_index][2].name()]
         rec["seeds"] = a.seeds

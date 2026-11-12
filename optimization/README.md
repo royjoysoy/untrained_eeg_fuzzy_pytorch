@@ -150,3 +150,43 @@ S=$S C=$C OUT=$OUT VENV=$HOME/venv/uneeg_opt VENV_MR=$HOME/venv/uneeg_mr bash op
 
 Outputs: `<out>/prep/<level>/<dataset>/` (features, `per_seed.csv`, `minirocket.csv`) and
 `<out>/prep_summary/` (`results.csv`, `factor_effects.csv`, `nested.csv`, `lodo.csv`, `headline.csv`).
+
+## Step (a'): readout (architecture, preprocessing and probe fixed)
+
+Question (suggested by Arel): does an EEG-appropriate readout let the frozen random network
+expose more? Same two architectures as step (b), reference preprocessing, 30 weight seeds,
+the same weights at every level (a readout draws no weights). Levels are in `readout.py`:
+
+| factor | levels |
+|---|---|
+| spectral | `logvar` log-variance of each filter (A1); `logpow_first` first conv without ELU -> square -> mean -> log, ShallowConvNet-like (A2); `ref_logvar` the architecture's own readout + A1 (A4) |
+| temporal | `subwin` log-variance in 0.5 s sub-windows, their mean and SD (B2); `across_win` mean and SD of window log-variance over the block (B3, resting datasets only); `hjorth` activity, mobility, complexity (H1) |
+| tangent space | `tcov32` covariance of 32 filters with diagonal, shrinkage 0.1, tangent space fitted inside training folds (C1); `ref_tcov32` own readout with its covariance replaced by C1 (C2); `tcov16` C1 with 16 filters (H3) |
+
+Our step-(a) `cov` readout is the covariance between FILTER outputs (not electrodes), upper
+triangle without diagonal and no tangent space; C1/C2 add the diagonal and the tangent space.
+Logs are taken per window, before the block average. Selection: nested and leave-one-dataset-out,
+as in step (b).
+
+```bash
+A=/project/rrg-glatard/royjoy/uneeg_opt_results/optimization
+OUT=$PWD/results/optimization/11-11-26
+# step 0: ref = step (a) bit for bit; every level sane on real data; probe timing on 2 datasets
+S=/project/rrg-glatard/shared/untrained_eeg A=$A OUT=$OUT VENV=$HOME/venv/uneeg_opt bash optimization/slurm/run_readout_step0.sh
+# estimate from step 0 and step (b)'s measured times; ask before the main run
+python optimization/readout_estimate.py --out $OUT --step-b $A/11-9-26
+# main run (after approval): extraction, probes, nested selection, summary
+S=/project/rrg-glatard/shared/untrained_eeg A=$A OUT=$OUT VENV=$HOME/venv/uneeg_opt bash optimization/slurm/run_readout.sh
+```
+
+Selection and summary reuse `prep_select.py` with `--study readout`: outputs in
+`<out>/readout_summary/` (same tables as step (b)). Handcrafted features and MiniRocket are not
+rerun: `--baselines $A/11-9-26` takes them from step (b)'s reference level (same samples, folds).
+
+| File | Role |
+|---|---|
+| `readout.py` | levels, where they apply, the architecture run at each level |
+| `readout_step0.py` | reference = step (a) bit for bit; sanity checks of every level; probe timing |
+| `readout_estimate.py` | CPU-hours from step 0 and step (b)'s measured times |
+| `slurm/run_readout_step0.sh`, `slurm/run_readout.sh` | step-0 jobs; main run |
+| `prep_select.py --study readout` | nested and LODO selection of the readout level; `readout_summary/` |

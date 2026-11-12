@@ -67,6 +67,8 @@ def block_features(feats: np.ndarray, cond: np.ndarray, per_block: int, keep=Non
     Default: mean of the block's windows, exactly scripts/phase1_features.block_features.
     Step (b) options: `keep` (bool per window, False = rejected artifact window) and
     `agg` = "median" or "trim20" (20 % trimmed mean) instead of the mean.
+    Step (a') option: `agg` = "mean_sd": mean AND standard deviation over the block's windows
+    (features are doubled: all means, then all SDs).
     """
     n = len(feats) // per_block
     if keep is None and agg == "mean":  # the phase-1 code path, bit for bit
@@ -79,7 +81,8 @@ def aggregate(F: np.ndarray, keep=None, agg="mean"):
     from scipy.stats import trim_mean
     K = np.ones(F.shape[:2], bool) if keep is None else np.asarray(keep).reshape(F.shape[:2])
     how = {"mean": lambda a: a.mean(axis=0), "median": lambda a: np.median(a, axis=0),
-           "trim20": lambda a: trim_mean(a, 0.2, axis=0)}[agg]
+           "trim20": lambda a: trim_mean(a, 0.2, axis=0),
+           "mean_sd": lambda a: np.concatenate([a.mean(axis=0), a.std(axis=0, ddof=1)])}[agg]
     return np.stack([how(F[i][K[i]]) for i in range(len(F))]).astype(F.dtype)
 
 

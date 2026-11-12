@@ -43,9 +43,16 @@ class ArchConfig:
     bias: str = "default"              # default | zero
     # g. nonlinearity and readout
     nonlinearity: str = "elu"          # elu | relu | tanh | none
-    readout: str = "mean"              # mean | meanstd | meanstd_ppv_max
+    readout: str = "mean"              # mean | meanstd | meanstd_ppv_max   (steps a, b)
+    #                                    logvar | logpow | subwin | hjorth | none   (step a', readout.py)
     readout_blocks: str = "last"       # last | all
-    cov_channels: object = 0           # 0, an int, or "all": channel covariance of the readout block(s)
+    cov_channels: object = 0           # 0, an int, or "all": covariance between the first n FILTER outputs
+    # step (a'): readouts (optimization/readout.py); defaults = steps (a) and (b), bit for bit
+    readout_from: str = "act"          # act: after the nonlinearity | first_lin: first conv, no nonlinearity
+    readout_extra: str = ""            # "" | logvar: log-variance appended to the readout above
+    cov_mode: str = "offdiag"          # offdiag: upper triangle without diagonal | spd: with diagonal
+    shrink: float = 0.0                # spd only: (1 - a) C + a tr(C)/n I (per window, no labels)
+    subwin: int = 0                    # subwin only: sub-window length, in samples of the readout layer
 
     def name(self) -> str:
         d = ArchConfig()
@@ -84,6 +91,14 @@ def from_name(name: str) -> ArchConfig:
 
 
 # ---------------------------------------------------------------------------
+_EPS = 1e-6    # floor before a log (ShallowConvNet's safe_log uses the same idea)
+_TINY = 1e-12  # floor of a denominator (a constant filter output would give 0/0)
+
+
+def _log(v):
+    return torch.log(v.clamp_min(_EPS))
+
+
 def _conv(cin, cout, k, d, groups=1):
     return nn.Conv1d(cin, cout, k, padding="same", dilation=d, groups=groups)
 
@@ -186,27 +201,85 @@ class ConfigurableCNN1d(nn.Module):
             return x
         raise ValueError(nl)
 
+    def _cov_n(self, n_filters):
+        """Filters in the covariance readout (0 = none)."""
+        c = self.cfg.cov_channels
+        return 0 if not c else n_filters if c == "all" else min(int(c), n_filters)
+
     def _readout(self, h):
+        """h: (windows, filters, time) -> one feature vector per window."""
         c = self.cfg
-        parts = [h.mean(dim=2)]
-        if c.readout in ("meanstd", "meanstd_ppv_max"):
-            parts.append(h.std(dim=2, unbiased=True))
-        if c.readout == "meanstd_ppv_max":
-            parts += [(h > 0).float().mean(dim=2), h.amax(dim=2)]
-        elif c.readout not in ("mean", "meanstd"):
+        if c.readout in ("mean", "meanstd", "meanstd_ppv_max"):  # steps (a) and (b), unchanged
+            parts = [h.mean(dim=2)]
+            if c.readout in ("meanstd", "meanstd_ppv_max"):
+                parts.append(h.std(dim=2, unbiased=True))
+            if c.readout == "meanstd_ppv_max":
+                parts += [(h > 0).float().mean(dim=2), h.amax(dim=2)]
+        elif c.readout == "logvar":   # log band power of each random filter (variance = power around the mean)
+            parts = [_log(h.var(dim=2, unbiased=True))]
+        elif c.readout == "logpow":   # ShallowConvNet: square -> mean -> log
+            parts = [_log(h.pow(2).mean(dim=2))]
+        elif c.readout == "subwin":   # log-variance in short sub-windows -> their mean and SD
+            n_sub = h.size(2) // c.subwin
+            if c.subwin < 2 or n_sub < 2:
+                raise ValueError(f"subwin={c.subwin} on {h.size(2)} samples")
+            seg = h[:, :, : n_sub * c.subwin].reshape(h.size(0), h.size(1), n_sub, c.subwin)
+            lv = _log(seg.var(dim=3, unbiased=True))
+            parts = [lv.mean(dim=2), lv.std(dim=2, unbiased=True)]
+        elif c.readout == "hjorth":   # activity (log-variance), mobility, complexity of each filter
+            d1 = h.diff(dim=2)
+            v0, v1, v2 = h.var(dim=2), d1.var(dim=2), d1.diff(dim=2).var(dim=2)
+            mob = torch.sqrt(v1 / v0.clamp_min(_TINY))
+            parts = [_log(v0), mob, torch.sqrt(v2 / v1.clamp_min(_TINY)) / mob.clamp_min(_TINY)]
+        elif c.readout == "none":     # covariance only
+            parts = []
+        else:
             raise ValueError(c.readout)
-        n = 0 if not c.cov_channels else h.size(1) if c.cov_channels == "all" else min(int(c.cov_channels), h.size(1))
+        if c.readout_extra == "logvar":
+            parts.append(_log(h.var(dim=2, unbiased=True)))
+        elif c.readout_extra:
+            raise ValueError(c.readout_extra)
+        n = self._cov_n(h.size(1))
         if n >= 2:
             z = h[:, :n] - h[:, :n].mean(dim=2, keepdim=True)
             cov = torch.bmm(z, z.transpose(1, 2)) / max(z.size(2) - 1, 1)
-            iu = torch.triu_indices(n, n, offset=1, device=h.device)
+            if c.cov_mode == "offdiag":
+                iu = torch.triu_indices(n, n, offset=1, device=h.device)
+            elif c.cov_mode == "spd":  # full SPD matrix for the tangent space (evaluate.RiemannTangent)
+                if c.shrink:
+                    tr = torch.diagonal(cov, dim1=1, dim2=2).mean(dim=1)
+                    eye = torch.eye(n, dtype=cov.dtype, device=h.device)
+                    cov = (1 - c.shrink) * cov + c.shrink * tr[:, None, None] * eye
+                iu = torch.triu_indices(n, n, offset=0, device=h.device)  # same order as RiemannTangent
+            else:
+                raise ValueError(c.cov_mode)
             parts.append(cov[:, iu[0], iu[1]])
         return torch.cat(parts, dim=1)
+
+    def readout_width(self):
+        """Filters seen by the readout (single readout block)."""
+        conv = self.convs[0] if self.cfg.readout_from == "first_lin" else self.convs[-1]
+        return conv.out_channels if hasattr(conv, "out_channels") else conv.pointwise.out_channels
+
+    def spd_blocks(self, feature_dim):
+        """[[start column, n]] of the SPD block for evaluate.RiemannTangent, or []."""
+        n = self._cov_n(self.readout_width())
+        if self.cfg.cov_mode != "spd" or n < 2:
+            return []
+        if self.cfg.readout_blocks != "last":
+            raise ValueError("spd covariance: readout_blocks must be 'last'")
+        return [[feature_dim - n * (n + 1) // 2, n]]  # always the last columns
 
     @torch.no_grad()
     def forward(self, x):
         if self.perm is not None:
             x = x[:, self.perm]
+        if self.cfg.readout_from == "first_lin":  # first conv only, before the nonlinearity
+            if self.cfg.readout_blocks != "last":
+                raise ValueError("readout_from='first_lin' needs readout_blocks='last'")
+            return self._readout(self.convs[0](x))
+        elif self.cfg.readout_from != "act":
+            raise ValueError(self.cfg.readout_from)
         outs = []
         for b, conv in enumerate(self.convs):
             if b > 0:
