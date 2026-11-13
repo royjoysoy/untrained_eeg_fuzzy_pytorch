@@ -6,6 +6,7 @@
 Step (a') readouts: add --study readout (folders readout/ and readout_summary/, levels from
 readout.py); its summary takes the handcrafted and MiniRocket baselines from step (b)'s
 reference level with --baselines $A/11-9-26 (they do not depend on the CNN readout).
+Step (a'') multiscale / filter bank: --study multiscale (folders multiscale/, multiscale_summary/).
 
 Inputs: <out>/prep/<level>/<dataset>/{features/, per_seed.csv, minirocket.csv} from
 extract.py, evaluate_dataset.py and minirocket.py run with --prep <level>.
@@ -37,20 +38,22 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from optimization import prep, readout  # noqa: E402
+from optimization import multiscale, prep, readout  # noqa: E402
 from optimization.common import DATASETS, dataset_config  # noqa: E402
 from optimization.evaluate import nested  # noqa: E402
 from optimization.evaluate_dataset import combined_handcrafted, done_files, load  # noqa: E402
 from untrained_eeg.tasks import task_data, task_labels, task_names  # noqa: E402
 
 class Study:
-    """Which level family is selected: `prep` (step b, default) or `readout` (step a')."""
+    """Which level family is selected: `prep` (step b, default), `readout` (step a') or
+    `multiscale` (step a'')."""
     mod, dir, summary = prep, "prep", "prep_summary"
 
     @classmethod
     def use(cls, name):
         cls.mod, cls.dir, cls.summary = {"prep": (prep, "prep", "prep_summary"),
-                                         "readout": (readout, "readout", "readout_summary")}[name]
+                                         "readout": (readout, "readout", "readout_summary"),
+                                         "multiscale": (multiscale, "multiscale", "multiscale_summary")}[name]
 
 
 AGG = dict(n_seeds=("seed", lambda s: int(s.notna().sum()) or 1),
@@ -287,9 +290,9 @@ def main():
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--jobs", type=int, default=1)
     p.add_argument("--allow-missing", action="store_true", help="summary: allow levels without results")
-    p.add_argument("--study", choices=["prep", "readout"], default="prep")
+    p.add_argument("--study", choices=["prep", "readout", "multiscale"], default="prep")
     p.add_argument("--baselines", type=Path, default=None,
-                   help="summary --study readout: step (b) results folder (handcrafted, MiniRocket at ref)")
+                   help="summary --study readout/multiscale: step (b) results folder (handcrafted, MiniRocket at ref)")
     a = p.parse_args()
     Study.use(a.study)
     from optimization.runinfo import run_info

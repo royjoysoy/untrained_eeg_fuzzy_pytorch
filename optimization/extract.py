@@ -11,6 +11,8 @@ Step (b), one preprocessing level (optimization/prep.py), written under <out>/pr
     python optimization/extract.py cnn ... --configs default --prep win4 [--cache-root $C]
 Step (a'), one readout level (optimization/readout.py), written under <out>/readout/<level>/:
     python optimization/extract.py cnn ... --configs default --readout logvar
+Step (a''), one multiscale / filter-bank level (optimization/multiscale.py), under <out>/multiscale/<level>/:
+    python optimization/extract.py cnn ... --configs n_filters=256,readout=hjorth --multiscale ms2
 
 Writes <out>/<dataset>/features/cnn/<config>/seed###.npz and
 <out>/<dataset>/features/handcrafted/<family>.npz. Existing files are skipped (resumable),
@@ -30,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from optimization.common import block_features, dataset_config, embed, load_windows, save_features  # noqa: E402
 from optimization.arch import ArchConfig, ConfigurableCNN1d, ablation_grid, from_name, prepare_input  # noqa: E402
 from optimization.runinfo import run_info  # noqa: E402
-from optimization import prep, readout  # noqa: E402
+from optimization import multiscale, prep, readout  # noqa: E402
 
 
 def seed_range(text):
@@ -60,6 +62,9 @@ def run_cnn(args, cfg, participants, windows, per_block, keep=None):
             fac, val = readout.LEVELS[args.readout].factor, args.readout
             run = readout.arch_for(arch, args.readout, cfg["sfreq"])
             agg = readout.LEVELS[args.readout].agg
+        elif args.multiscale:  # step (a''): read every block / filter-bank input
+            fac, val = multiscale.LEVELS[args.multiscale].factor, args.multiscale
+            run = multiscale.arch_for(arch, args.multiscale)
         else:
             run = arch
         for seed in args.seeds:
@@ -68,8 +73,8 @@ def run_cnn(args, cfg, participants, windows, per_block, keep=None):
                 continue
             if inputs is None:
                 t_in = time.time()
-                inputs = {p: prepare_input(windows[p][0], run) for p in pids}
-                input_seconds = time.time() - t_in  # unc3 construction; ~0 for raw input
+                inputs = {p: prepare_input(windows[p][0], run, cfg["sfreq"], per_block) for p in pids}
+                input_seconds = time.time() - t_in  # unc3 / filter-bank construction; ~0 for raw input
             t0 = time.time()
             model = ConfigurableCNN1d(n_chans, run, seed=seed)
             rows = [block_features(embed(model, inputs[p]), windows[p][1], per_block,
@@ -88,6 +93,9 @@ def run_cnn(args, cfg, participants, windows, per_block, keep=None):
                 spd = model.spd_blocks(meta["feature_dim"] // (2 if agg == "mean_sd" else 1))
                 if spd:  # evaluate.RiemannTangent projects these columns inside the training folds
                     meta["spd_blocks"] = spd
+            if args.multiscale:
+                meta.update(multiscale=args.multiscale, arch_run=run.name(), sfreq=cfg["sfreq"],
+                            block_widths=list(model.widths))
             save_features(out, rows, pids, "untrained", meta)
             print(f"{args.dataset} {arch.name():40s} seed{seed:03d} {meta['feature_dim']:6d} feats "
                   f"{meta['extract_seconds']:.1f}s", flush=True)
@@ -150,9 +158,13 @@ def main():
     p.add_argument("--cache-root", type=Path, default=None, help="where raw-based level caches live")
     p.add_argument("--readout", choices=list(readout.LEVELS), default=None,
                    help="step (a') readout level; output goes to <out>/readout/<level>")
+    p.add_argument("--multiscale", choices=list(multiscale.LEVELS), default=None,
+                   help="step (a'') level; output goes to <out>/multiscale/<level>")
     a = p.parse_args()
     if a.readout and (a.prep or a.kind != "cnn"):
         raise SystemExit("--readout: CNN features only, with the reference preprocessing (no --prep)")
+    if a.multiscale and (a.prep or a.readout or a.kind != "cnn"):
+        raise SystemExit("--multiscale: CNN features only, reference preprocessing and readout")
     if a.prep and a.kind == "handcrafted" and not prep.for_handcrafted(a.prep):
         print(f"{a.prep}: handcrafted features equal those of the reference (or sf256); nothing to do")
         return
@@ -174,6 +186,9 @@ def main():
             if a.readout:
                 a.out = a.out / "readout" / a.readout
                 rec["readout"] = a.readout
+            if a.multiscale:
+                a.out = a.out / "multiscale" / a.multiscale
+                rec["multiscale"] = a.multiscale
         rec["load_seconds"] = round(time.time() - t0, 2)
         rec["configs"] = a.configs if a.grid_index is None else [ablation_grid()[a.grid_index][2].name()]
         rec["seeds"] = a.seeds

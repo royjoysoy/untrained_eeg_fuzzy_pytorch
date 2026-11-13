@@ -190,3 +190,46 @@ rerun: `--baselines $A/11-9-26` takes them from step (b)'s reference level (same
 | `readout_estimate.py` | CPU-hours from step 0 and step (b)'s measured times |
 | `slurm/run_readout_step0.sh`, `slurm/run_readout.sh` | step-0 jobs; main run |
 | `prep_select.py --study readout` | nested and LODO selection of the readout level; `readout_summary/` |
+
+## Step (a''): multiscale readout and filter-bank input (combined + Hjorth fixed)
+
+Question (Tristan, 11-12-26): pooling discards high frequencies, so does reading EVERY conv block
+(multiscale), or giving the network band-passed copies of the signal (filter bank), expose more?
+Starting point = step (a')'s decision: combined + Hjorth (`n_filters=256,readout=hjorth`, 1,536
+features). Reference preprocessing, 30 weight seeds, same probe and folds. Levels in `multiscale.py`:
+
+| level | factor | what | features |
+|---|---|---|---|
+| `ref` | reference | Hjorth of the last block (= step (a') `hjorth`, combined) | 1,536 |
+| `ms2` | multiscale | Hjorth of blocks 1 and 2, concatenated (same weights) | 2,304 |
+| `last3` | depth | 3 blocks, last block only (control: depth vs several blocks) | 3,072 |
+| `ms3` | multiscale | 3 blocks, all read | 5,376 |
+| `fb` | filter bank | input = raw + delta/theta/alpha/beta/gamma copies per electrode | 1,536 |
+| `fb_ms2` | combination | `fb` + `ms2` | 2,304 |
+
+Filter bank (`arch.filter_bank`): zero-phase 4th-order Butterworth band-pass, bands as the
+handcrafted band powers (1-4, 4-8, 8-13, 13-30, 30-40 Hz), applied to each block with its windows
+joined back in time; channels version-major `[raw e1..eN, delta e1..eN, ..., gamma e1..eN]`.
+No labels. The copies are smaller in amplitude than raw and the network has no normalization.
+Not included (approved 11-13-26): 4 blocks (the last block keeps 4 time points of a 2 s window).
+
+```bash
+A=/project/rrg-glatard/royjoy/uneeg_opt_results/optimization
+OUT=$PWD/results/optimization/11-13-26
+# step 0: ref = step (a') combined + Hjorth bit for bit; levels sane; probe timing (incl. Sleep-EDF)
+S=/project/rrg-glatard/shared/untrained_eeg A=$A OUT=$OUT VENV=$HOME/venv/uneeg_opt bash optimization/slurm/run_multiscale_step0.sh
+# estimate from step 0 and step (a')'s measured times; ask before the main run
+python optimization/multiscale_estimate.py --out $OUT --step-ap $A/11-11-26
+# main run (after approval)
+S=/project/rrg-glatard/shared/untrained_eeg A=$A OUT=$OUT VENV=$HOME/venv/uneeg_opt bash optimization/slurm/run_multiscale.sh
+```
+
+Selection and summary: `prep_select.py --study multiscale` -> `<out>/multiscale_summary/`;
+handcrafted and MiniRocket from step (b)'s reference level (`--baselines $A/11-9-26`).
+
+| File | Role |
+|---|---|
+| `multiscale.py` | levels and the architecture run at each level |
+| `multiscale_step0.py` | reference = step (a') bit for bit; sanity and shared-column checks; probe timing |
+| `multiscale_estimate.py` | CPU-hours from step 0 and step (a')'s measured times |
+| `slurm/run_multiscale_step0.sh`, `slurm/run_multiscale.sh` | step-0 jobs; main run |

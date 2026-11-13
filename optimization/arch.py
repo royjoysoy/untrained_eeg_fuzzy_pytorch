@@ -27,6 +27,7 @@ class ArchConfig:
     channel_mode: str = "mixed"        # mixed | depthwise_first | per_electrode
     # b. input versions
     input_versions: str = "raw"        # raw | unc3 (robust-scaled, median-filtered, |derivative|)
+    #                                    | fb6 (raw + 5 band-passed copies, step a'', FB_BANDS)
     # c. kernels / dilation
     kernel1: int = 25                  # first conv (25 samples = 0.2 s at 128 Hz)
     kernel_rest: int = 11              # every later conv
@@ -135,7 +136,7 @@ class ConfigurableCNN1d(nn.Module):
     def __init__(self, n_chans: int, cfg: ArchConfig = ArchConfig(), seed: int | None = 0):
         super().__init__()
         self.cfg, self.n_el = cfg, n_chans
-        n_ver = 3 if cfg.input_versions == "unc3" else 1
+        n_ver = N_VERSIONS[cfg.input_versions]
         cin = n_chans * n_ver
         per_el = cfg.channel_mode == "per_electrode"
         g = n_chans if per_el else 1
@@ -290,13 +291,50 @@ class ConfigurableCNN1d(nn.Module):
         return torch.cat([self._readout(h) for h in keep], dim=1)
 
 
-def prepare_input(X: np.ndarray, cfg: ArchConfig) -> np.ndarray:
-    """(n_windows, n_chans, T) float32 -> the network input for this config."""
+# Input versions: number of copies of every electrode in the network input.
+N_VERSIONS = {"raw": 1, "unc3": 3, "fb6": 6}
+# Filter bank (fb6): the same bands as the handcrafted band powers (handcrafted.BANDS), Hz.
+# The phase-1 cache is already band-passed 1-40 Hz (Sleep-EDF 0.5-40), so "gamma" is 30-40 Hz.
+FB_BANDS = {"delta": (1, 4), "theta": (4, 8), "alpha": (8, 13), "beta": (13, 30), "gamma": (30, 40)}
+
+
+def filter_bank(X: np.ndarray, sfreq: float, per_block: int) -> np.ndarray:
+    """(n_windows, n_chans, T) -> (n_windows, 6 * n_chans, T): raw, then one band-passed copy per band.
+
+    Channel order is VERSION-major (as unc3): [raw e1..eN, delta e1..eN, theta ..., alpha ...,
+    beta ..., gamma e1..eN]. Zero-phase 4th-order Butterworth band-pass (sosfiltfilt), applied to
+    each block with its windows joined back in time (as prep.lowpass_blocks), so a 2 s window
+    has no filter edge inside a block. Windows after the last full block (never used by
+    block_features) are filtered on their own. No labels, nothing fitted.
+    """
+    from scipy.signal import butter, sosfiltfilt
+    n, ch, t = X.shape
+    nb = n // per_block
+    full = X[: nb * per_block].reshape(nb, per_block, ch, t).transpose(0, 2, 1, 3).reshape(nb, ch, -1)
+    out = [X]
+    for lo, hi in FB_BANDS.values():
+        sos = butter(4, [lo, hi], btype="bandpass", fs=sfreq, output="sos")
+        y = sosfiltfilt(sos, full.astype(np.float64), axis=-1)
+        y = y.reshape(nb, ch, per_block, t).transpose(0, 2, 1, 3).reshape(nb * per_block, ch, t)
+        if n > nb * per_block:  # leftover windows (dropped later by block_features)
+            y = np.concatenate([y, sosfiltfilt(sos, X[nb * per_block:].astype(np.float64), axis=-1)])
+        out.append(y.astype(np.float32))
+    return np.concatenate(out, axis=1)
+
+
+def prepare_input(X: np.ndarray, cfg: ArchConfig, sfreq: float | None = None,
+                  per_block: int | None = None) -> np.ndarray:
+    """(n_windows, n_chans, T) float32 -> the network input for this config.
+    fb6 needs the sampling rate and the windows per block (one participant's windows, in order)."""
     if cfg.input_versions == "raw":
         return X
     if cfg.input_versions == "unc3":
         from uncnn1d.inputs import build_input
         return np.stack([build_input(w, rank_size=5) for w in X])
+    if cfg.input_versions == "fb6":
+        if sfreq is None or per_block is None:
+            raise ValueError("fb6 input needs sfreq and per_block")
+        return filter_bank(X, sfreq, per_block)
     raise ValueError(cfg.input_versions)
 
 
